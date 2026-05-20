@@ -46,7 +46,7 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
 
     let price = parse_global_price(body);
     let section_lines = find_weekday_section_lines(body, weekday)?;
-    let items = parse_items(section_lines, price);
+    let items = parse_items(section_lines, price.as_ref());
 
     if items.is_empty() {
         return Ok(LunchState::NoLunchToday {
@@ -62,17 +62,17 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
     })
 }
 
-fn parse_items(lines: Vec<String>, price: Option<Price>) -> Vec<LunchItem> {
+fn parse_items(lines: Vec<String>, price: Option<&Price>) -> Vec<LunchItem> {
     lines
         .into_iter()
         .filter(|line| is_dish_line(line))
-        .map(|description| lunch_item(description, price.clone()))
+        .map(|description| lunch_item(&description, price.cloned()))
         .collect()
 }
 
-fn lunch_item(description: String, price: Option<Price>) -> LunchItem {
+fn lunch_item(description: &str, price: Option<Price>) -> LunchItem {
     LunchItem {
-        description: format_dish_description(&description),
+        description: format_dish_description(description),
         price,
     }
 }
@@ -110,8 +110,7 @@ fn find_weekday_section_lines(body: &str, weekday: Weekday) -> Result<Vec<String
     for section in sections {
         let section_body = section
             .find('>')
-            .map(|tag_end| &section[tag_end + 1..])
-            .unwrap_or(section);
+            .map_or(section, |tag_end| &section[tag_end + 1..]);
         let lines = visible_text_lines(section_body);
 
         if lines

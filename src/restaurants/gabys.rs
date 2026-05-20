@@ -89,8 +89,7 @@ fn lunch_lines(body: &str) -> Result<Vec<String>, SourceError> {
         .position(|line| {
             line.starts_with("What’s for lunch") || line.starts_with("What's for lunch")
         })
-        .map(|position| menu_start + 1 + position)
-        .unwrap_or(lines.len());
+        .map_or(lines.len(), |position| menu_start + 1 + position);
 
     Ok(lines[menu_start..menu_end].to_vec())
 }
@@ -105,8 +104,7 @@ fn find_weekday_lines(lines: &[String], weekday: Weekday) -> Vec<String> {
     let day_end = lines[day_start + 1..]
         .iter()
         .position(|line| parse_english_weekday(line).is_some())
-        .map(|position| day_start + 1 + position)
-        .unwrap_or(lines.len());
+        .map_or(lines.len(), |position| day_start + 1 + position);
 
     lines[day_start + 1..day_end].to_vec()
 }
@@ -132,9 +130,7 @@ fn is_dish_line(line: &str) -> bool {
 
 fn parse_lunch_price(lines: &[String]) -> Option<Price> {
     lines.iter().find_map(|line| {
-        let Some(sek_start) = line.find("SEK") else {
-            return None;
-        };
+        let sek_start = line.find("SEK")?;
         let amount = line[..sek_start]
             .split_whitespace()
             .last()?

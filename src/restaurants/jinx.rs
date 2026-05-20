@@ -112,8 +112,7 @@ fn parse_visible_lunch(body: &str, weekday: Weekday) -> Result<LunchState, Sourc
     let next_day = lines[item_start + 1..]
         .iter()
         .position(|line| parse_weekday(line).is_some())
-        .map(|position| item_start + 1 + position)
-        .unwrap_or(lines.len());
+        .map_or(lines.len(), |position| item_start + 1 + position);
     let mut block = lines[item_start + 1..next_day].iter();
     let first = block
         .next()
@@ -131,7 +130,7 @@ fn parse_visible_lunch(body: &str, weekday: Weekday) -> Result<LunchState, Sourc
     Ok(LunchState::Available {
         weekday,
         items: vec![LunchItem {
-            description: description.to_string(),
+            description: description.clone(),
             price,
         }],
         notes: Vec::new(),

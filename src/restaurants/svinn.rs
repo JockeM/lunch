@@ -94,8 +94,7 @@ fn find_weekday_lines(lines: &[String], weekday: Weekday) -> Vec<String> {
     let day_end = lines[day_start + 1..]
         .iter()
         .position(|line| parse_swedish_weekday(line).is_some() || is_non_day_section(line))
-        .map(|position| day_start + 1 + position)
-        .unwrap_or(lines.len());
+        .map_or(lines.len(), |position| day_start + 1 + position);
 
     lines[day_start + 1..day_end].to_vec()
 }
@@ -153,7 +152,7 @@ fn starts_with_uppercase(value: &str) -> bool {
     value
         .chars()
         .find(|character| character.is_alphabetic())
-        .is_some_and(|character| character.is_uppercase())
+        .is_some_and(char::is_uppercase)
 }
 
 fn strip_hidden_garbage(body: &str) -> String {
@@ -216,7 +215,7 @@ fn parse_price_after(line: &str, marker: &str) -> Option<Price> {
     let after_marker = line[marker_start + marker.len()..].trim();
     let amount = after_marker
         .chars()
-        .take_while(|character| character.is_ascii_digit())
+        .take_while(char::is_ascii_digit)
         .collect::<String>()
         .parse::<u32>()
         .ok()?;

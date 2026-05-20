@@ -18,7 +18,7 @@ impl Weekday {
             .duration_since(UNIX_EPOCH)
             .expect("system time must be after Unix epoch")
             .as_secs();
-        let days = (seconds / 86_400) as i64;
+        let days = i64::try_from(seconds / 86_400).expect("Unix day count must fit in i64");
 
         Self::from_days_since_unix_epoch(days)
     }
