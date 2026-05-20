@@ -1,4 +1,5 @@
 mod jinx;
+mod svinn;
 mod vallagata;
 
 use crate::date::Weekday;
@@ -11,7 +12,11 @@ pub trait RestaurantSource {
 }
 
 pub fn all_sources() -> Vec<Box<dyn RestaurantSource>> {
-    vec![Box::new(jinx::JinxEmpire), Box::new(vallagata::Vallagata)]
+    vec![
+        Box::new(jinx::JinxEmpire),
+        Box::new(svinn::Svinn),
+        Box::new(vallagata::Vallagata),
+    ]
 }
 
 #[cfg(test)]
