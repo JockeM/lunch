@@ -1,0 +1,9 @@
+[Unit]
+Description=Post lunch menu to Slack
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/lunch/slack-webhook.env
+ExecStart=/usr/local/bin/lunch-post-slack
