@@ -1,14 +1,10 @@
 mod slack;
 mod text;
 
-use crate::domain::{Currency, FailureStage, Price, SourceError};
+use crate::domain::{FailureStage, SourceError};
 
 pub use slack::render_slack_payload;
 pub use text::render_day;
-
-fn render_price(price: &Price) -> String {
-    format!("{} {}", price.amount, price.currency)
-}
 
 fn render_no_lunch_reason(reason: &crate::domain::NoLunchReason) -> &'static str {
     match reason {
@@ -39,13 +35,5 @@ fn render_error(error: &SourceError) -> String {
         SourceError::InvalidJson(message) => format!("invalid JSON: {message}"),
         SourceError::InvalidPrice(price) => format!("invalid price: {price}"),
         SourceError::UnsupportedFormat(message) => format!("unsupported format: {message}"),
-    }
-}
-
-impl std::fmt::Display for Currency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Sek => f.write_str("SEK"),
-        }
     }
 }

@@ -2,8 +2,8 @@
 
 use crate::date::Weekday;
 use crate::domain::{
-    Currency, FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId,
-    RestaurantMeta, SourceError, SourceKind,
+    FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId, RestaurantMeta,
+    SourceError, SourceKind,
 };
 use crate::restaurants::{
     RestaurantSource,
@@ -247,20 +247,8 @@ fn parse_price(item: &Value) -> Result<Option<Price>, SourceError> {
         .trim()
         .parse::<u32>()
         .map_err(|_| SourceError::InvalidPrice(price.to_string()))?;
-    let currency = match offer
-        .get("priceCurrency")
-        .and_then(Value::as_str)
-        .unwrap_or("SEK")
-    {
-        "SEK" => Currency::Sek,
-        currency => {
-            return Err(SourceError::UnsupportedFormat(format!(
-                "currency {currency}"
-            )));
-        }
-    };
 
-    Ok(Some(Price { amount, currency }))
+    Ok(Some(Price { amount }))
 }
 
 fn is_type(value: &Value, expected_type: &str) -> bool {

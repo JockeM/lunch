@@ -1,7 +1,7 @@
 use crate::date::Weekday;
 use crate::domain::{LunchItem, LunchState, RestaurantLunch};
 
-use super::{render_error, render_no_lunch_reason, render_price, render_stage};
+use super::{render_error, render_no_lunch_reason, render_stage};
 
 pub fn render_day(weekday: Weekday, lunches: &[RestaurantLunch]) -> String {
     let mut output = format!("Today ({weekday})");
@@ -45,10 +45,7 @@ fn render_available(items: &[LunchItem]) -> String {
 }
 
 fn render_item(item: &LunchItem) -> String {
-    match &item.price {
-        Some(price) => format!("{} ({})", item.description, render_price(price)),
-        None => item.description.clone(),
-    }
+    item.description.clone()
 }
 
 #[cfg(test)]

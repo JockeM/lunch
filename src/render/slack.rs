@@ -2,7 +2,7 @@ use crate::date::Weekday;
 use crate::domain::{LunchItem, LunchState, RestaurantLunch};
 use serde_json::json;
 
-use super::{render_error, render_no_lunch_reason, render_price, render_stage};
+use super::{render_error, render_no_lunch_reason, render_stage};
 
 pub fn render_slack_payload(weekday: Weekday, lunches: &[RestaurantLunch]) -> String {
     let mut blocks = vec![json!({
@@ -91,14 +91,7 @@ fn render_slack_available(items: &[LunchItem]) -> Vec<String> {
 }
 
 fn render_slack_item(item: &LunchItem) -> String {
-    match &item.price {
-        Some(price) => format!(
-            "{} _{}_",
-            slack_escape(&item.description),
-            slack_escape(&render_price(price))
-        ),
-        None => slack_escape(&item.description),
-    }
+    slack_escape(&item.description)
 }
 
 fn slack_escape(value: &str) -> String {
@@ -115,7 +108,7 @@ fn slack_link(url: &str, label: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Currency, Price, RestaurantId, RestaurantMeta, SourceKind};
+    use crate::domain::{Price, RestaurantId, RestaurantMeta, SourceKind};
 
     #[test]
     fn renders_slack_payload() {
@@ -130,10 +123,7 @@ mod tests {
                 weekday: Weekday::Wednesday,
                 items: vec![LunchItem {
                     description: "Bibimbap & greens".to_string(),
-                    price: Some(Price {
-                        amount: 135,
-                        currency: Currency::Sek,
-                    }),
+                    price: Some(Price { amount: 135 }),
                 }],
                 notes: Vec::new(),
             },

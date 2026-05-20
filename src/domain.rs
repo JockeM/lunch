@@ -56,12 +56,6 @@ pub struct LunchItem {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Price {
     pub amount: u32,
-    pub currency: Currency,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Currency {
-    Sek,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
