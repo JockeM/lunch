@@ -33,18 +33,9 @@ fn render_lunch_block(lunch: &RestaurantLunch) -> serde_json::Value {
             "type": "mrkdwn",
             "text": format!(
                 "*{}*\n{}",
-                slack_escape(lunch.meta.display_name),
+                slack_link(lunch.meta.source_url, lunch.meta.display_name),
                 render_slack_state(&lunch.state),
             ),
-        },
-        "accessory": {
-            "type": "button",
-            "text": {
-                "type": "plain_text",
-                "text": "Menu",
-                "emoji": true,
-            },
-            "url": lunch.meta.source_url,
         },
     })
 }
@@ -117,6 +108,10 @@ fn slack_escape(value: &str) -> String {
         .replace('>', "&gt;")
 }
 
+fn slack_link(url: &str, label: &str) -> String {
+    format!("<{}|{}>", slack_escape(url), slack_escape(label))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,10 +146,12 @@ mod tests {
         assert_eq!(payload["blocks"][0]["type"], "header");
         assert_eq!(payload["blocks"][1]["type"], "divider");
         assert_eq!(payload["blocks"][2]["type"], "section");
-        assert_eq!(payload["blocks"][2]["accessory"]["type"], "button");
-        assert_eq!(
-            payload["blocks"][2]["accessory"]["url"],
-            "https://www.jinxempire.com/#menu"
+        assert!(payload["blocks"][2]["accessory"].is_null());
+        assert!(
+            payload["blocks"][2]["text"]["text"]
+                .as_str()
+                .unwrap()
+                .contains("*<https://www.jinxempire.com/#menu|Jinx Empire>*")
         );
         assert!(
             payload["blocks"][2]["text"]["text"]
