@@ -1,5 +1,6 @@
 mod jinx;
 mod svinn;
+mod utils;
 mod vallagata;
 
 use crate::date::Weekday;

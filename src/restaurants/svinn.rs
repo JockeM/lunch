@@ -1,9 +1,12 @@
 use crate::date::Weekday;
 use crate::domain::{
-    Currency, FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId,
-    RestaurantMeta, SourceError, SourceKind,
+    FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId, RestaurantMeta,
+    SourceError, SourceKind,
 };
-use crate::restaurants::RestaurantSource;
+use crate::restaurants::{
+    RestaurantSource,
+    utils::{fetch_body, normalize_text, parse_swedish_weekday, sek_price, visible_text_lines},
+};
 
 pub struct Svinn;
 
@@ -31,25 +34,6 @@ impl RestaurantSource for Svinn {
             },
         }
     }
-}
-
-fn fetch_body(url: &str) -> Result<String, SourceError> {
-    let response = reqwest::blocking::Client::builder()
-        .user_agent("lunch/0.1")
-        .build()
-        .map_err(|error| SourceError::Network(error.to_string()))?
-        .get(url)
-        .send()
-        .map_err(|error| SourceError::Network(error.to_string()))?;
-    let status = response.status();
-
-    if !status.is_success() {
-        return Err(SourceError::HttpStatus(status.as_u16()));
-    }
-
-    response
-        .text()
-        .map_err(|error| SourceError::Network(error.to_string()))
 }
 
 pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceError> {
@@ -172,47 +156,6 @@ fn starts_with_uppercase(value: &str) -> bool {
         .is_some_and(|character| character.is_uppercase())
 }
 
-fn visible_text_lines(body: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut text = String::new();
-    let mut in_tag = false;
-
-    for character in body.chars() {
-        match character {
-            '<' => {
-                push_text_line(&mut lines, &mut text);
-                in_tag = true;
-            }
-            '>' => in_tag = false,
-            _ if !in_tag => text.push(character),
-            _ => {}
-        }
-    }
-
-    push_text_line(&mut lines, &mut text);
-    lines
-}
-
-fn push_text_line(lines: &mut Vec<String>, text: &mut String) {
-    let line = normalize_text(&decode_html_entities(text));
-
-    if !line.is_empty() {
-        lines.push(line);
-    }
-
-    text.clear();
-}
-
-fn normalize_text(value: &str) -> String {
-    value
-        .replace('\u{200b}', "")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_string()
-}
-
 fn strip_hidden_garbage(body: &str) -> String {
     let mut stripped = String::new();
     let mut rest = body;
@@ -241,40 +184,6 @@ fn strip_hidden_garbage(body: &str) -> String {
 
     stripped.push_str(rest);
     stripped
-}
-
-fn decode_html_entities(value: &str) -> String {
-    value
-        .replace("&Aring;", "Å")
-        .replace("&aring;", "å")
-        .replace("&Auml;", "Ä")
-        .replace("&auml;", "ä")
-        .replace("&Ouml;", "Ö")
-        .replace("&ouml;", "ö")
-        .replace("&Eacute;", "É")
-        .replace("&eacute;", "é")
-        .replace("&amp;", "&")
-        .replace("&nbsp;", " ")
-        .replace("&#8203;", "")
-        .replace("&quot;", "\"")
-}
-
-fn parse_swedish_weekday(value: &str) -> Option<Weekday> {
-    let value = value.trim().to_uppercase();
-
-    if value.starts_with("MÅNDAG") {
-        Some(Weekday::Monday)
-    } else if value.starts_with("TISDAG") {
-        Some(Weekday::Tuesday)
-    } else if value.starts_with("ONSDAG") {
-        Some(Weekday::Wednesday)
-    } else if value.starts_with("TORSDAG") {
-        Some(Weekday::Thursday)
-    } else if value.starts_with("FREDAG") {
-        Some(Weekday::Friday)
-    } else {
-        None
-    }
 }
 
 fn is_non_day_section(line: &str) -> bool {
@@ -312,15 +221,13 @@ fn parse_price_after(line: &str, marker: &str) -> Option<Price> {
         .parse::<u32>()
         .ok()?;
 
-    Some(Price {
-        amount,
-        currency: Currency::Sek,
-    })
+    Some(sek_price(amount))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::Currency;
 
     const KVM_MENU: &str = r#"
         <h5>Lunchmeny</h5>

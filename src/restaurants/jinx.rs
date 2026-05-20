@@ -5,7 +5,10 @@ use crate::domain::{
     Currency, FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId,
     RestaurantMeta, SourceError, SourceKind,
 };
-use crate::restaurants::RestaurantSource;
+use crate::restaurants::{
+    RestaurantSource,
+    utils::{fetch_body, sek_price, visible_text_lines},
+};
 use serde_json::Value;
 
 pub struct JinxEmpire;
@@ -34,25 +37,6 @@ impl RestaurantSource for JinxEmpire {
             },
         }
     }
-}
-
-fn fetch_body(url: &str) -> Result<String, SourceError> {
-    let response = reqwest::blocking::Client::builder()
-        .user_agent("lunch/0.1")
-        .build()
-        .map_err(|error| SourceError::Network(error.to_string()))?
-        .get(url)
-        .send()
-        .map_err(|error| SourceError::Network(error.to_string()))?;
-    let status = response.status();
-
-    if !status.is_success() {
-        return Err(SourceError::HttpStatus(status.as_u16()));
-    }
-
-    response
-        .text()
-        .map_err(|error| SourceError::Network(error.to_string()))
 }
 
 pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceError> {
@@ -154,45 +138,6 @@ fn parse_visible_lunch(body: &str, weekday: Weekday) -> Result<LunchState, Sourc
     })
 }
 
-fn visible_text_lines(body: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut text = String::new();
-    let mut in_tag = false;
-
-    for character in body.chars() {
-        match character {
-            '<' => {
-                push_text_line(&mut lines, &mut text);
-                in_tag = true;
-            }
-            '>' => in_tag = false,
-            _ if !in_tag => text.push(character),
-            _ => {}
-        }
-    }
-
-    push_text_line(&mut lines, &mut text);
-    lines
-}
-
-fn push_text_line(lines: &mut Vec<String>, text: &mut String) {
-    let line = decode_html_entities(text).trim().to_string();
-
-    if !line.is_empty() {
-        lines.push(line);
-    }
-
-    text.clear();
-}
-
-fn decode_html_entities(value: &str) -> String {
-    value
-        .replace("&amp;", "&")
-        .replace("&nbsp;", " ")
-        .replace("&#x27;", "'")
-        .replace("&quot;", "\"")
-}
-
 fn parse_price_text(value: &str) -> Result<Option<Price>, SourceError> {
     let normalized = value.trim().to_ascii_lowercase();
     let Some(amount) = normalized.strip_suffix(" kr") else {
@@ -203,10 +148,7 @@ fn parse_price_text(value: &str) -> Result<Option<Price>, SourceError> {
         .parse::<u32>()
         .map_err(|_| SourceError::InvalidPrice(value.to_string()))?;
 
-    Ok(Some(Price {
-        amount,
-        currency: Currency::Sek,
-    }))
+    Ok(Some(sek_price(amount)))
 }
 
 fn parse_menu_json(body: &str) -> Result<Value, SourceError> {
