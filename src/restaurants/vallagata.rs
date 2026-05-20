@@ -1,5 +1,7 @@
 use crate::date::Weekday;
-use crate::domain::{LunchState, RestaurantId, RestaurantMeta, SourceError, SourceKind};
+use crate::domain::{
+    FailureStage, LunchState, RestaurantId, RestaurantMeta, SourceError, SourceKind,
+};
 use crate::restaurants::RestaurantSource;
 
 pub struct Vallagata;
@@ -14,7 +16,10 @@ impl RestaurantSource for Vallagata {
         }
     }
 
-    fn lunch_for(&self, _weekday: Weekday) -> Result<LunchState, SourceError> {
-        Err(SourceError::NotImplemented)
+    fn lunch_for(&self, _weekday: Weekday) -> LunchState {
+        LunchState::Unavailable {
+            stage: FailureStage::Parse,
+            error: SourceError::NotImplemented,
+        }
     }
 }

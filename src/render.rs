@@ -18,7 +18,7 @@ pub fn render_day(weekday: Weekday, lunches: &[RestaurantLunch]) -> String {
 
 fn render_state(state: &LunchState) -> String {
     match state {
-        LunchState::Available { items, notes, .. } => render_available(items, notes),
+        LunchState::Available { items, .. } => render_available(items),
         LunchState::NoLunchToday {
             weekday, reason, ..
         } => {
@@ -34,22 +34,11 @@ fn render_state(state: &LunchState) -> String {
     }
 }
 
-fn render_available(items: &[LunchItem], notes: &[String]) -> String {
-    let mut lines = Vec::new();
-
-    for item in items {
-        if let Some(price) = &item.price {
-            lines.push(format!("{} {}", price.amount, price.currency));
-        }
-
-        if let Some(title) = &item.title {
-            lines.push(title.clone());
-        }
-
-        lines.push(item.description.clone());
-    }
-
-    lines.extend(notes.iter().cloned());
+fn render_available(items: &[LunchItem]) -> String {
+    let lines = items
+        .iter()
+        .map(|item| item.description.clone())
+        .collect::<Vec<_>>();
 
     if lines.is_empty() {
         "No menu items found".to_string()

@@ -47,19 +47,8 @@ pub enum LunchState {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LunchItem {
-    pub title: Option<String>,
     pub description: String,
-    pub kind: MenuItemKind,
     pub price: Option<Price>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MenuItemKind {
-    Meat,
-    Vegetarian,
-    Vegan,
-    Fish,
-    Unknown,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

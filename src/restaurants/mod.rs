@@ -2,12 +2,12 @@ mod jinx;
 mod vallagata;
 
 use crate::date::Weekday;
-use crate::domain::{LunchState, RestaurantMeta, SourceError};
+use crate::domain::{LunchState, RestaurantMeta};
 
 pub trait RestaurantSource {
     fn meta(&self) -> RestaurantMeta;
 
-    fn lunch_for(&self, weekday: Weekday) -> Result<LunchState, SourceError>;
+    fn lunch_for(&self, weekday: Weekday) -> LunchState;
 }
 
 pub fn all_sources() -> Vec<Box<dyn RestaurantSource>> {
