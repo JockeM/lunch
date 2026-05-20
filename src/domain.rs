@@ -7,7 +7,7 @@ pub enum RestaurantId {
     Gabys,
     JinxEmpire,
     Svinn,
-    Vallagata,
+    Vallagat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

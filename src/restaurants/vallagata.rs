@@ -13,8 +13,8 @@ pub struct Vallagata;
 impl RestaurantSource for Vallagata {
     fn meta(&self) -> RestaurantMeta {
         RestaurantMeta {
-            id: RestaurantId::Vallagata,
-            display_name: "Vallagata",
+            id: RestaurantId::Vallagat,
+            display_name: "Vällagat",
             source_url: "https://www.vallagat.se/lunchmeny",
             source_kind: SourceKind::HtmlWeekdayText,
         }
