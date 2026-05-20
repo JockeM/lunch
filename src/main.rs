@@ -8,7 +8,7 @@ use std::env;
 use std::process::ExitCode;
 
 use app::load_todays_lunches;
-use render::render_day;
+use render::{render_day, render_slack_payload};
 
 fn main() -> ExitCode {
     match run() {
@@ -24,25 +24,41 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<String, String> {
-    parse_args(env::args().skip(1))?;
+    let command = parse_args(env::args().skip(1))?;
     let (weekday, lunches) = load_todays_lunches();
 
-    Ok(render_day(weekday, &lunches))
+    Ok(match command {
+        Command::Today => render_day(weekday, &lunches),
+        Command::Slack => render_slack_payload(weekday, &lunches),
+    })
 }
 
-fn parse_args(args: impl IntoIterator<Item = String>) -> Result<(), String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Command {
+    Today,
+    Slack,
+}
+
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {
     let mut args = args.into_iter();
 
-    match args.next().as_deref() {
-        None | Some("today") => {}
-        Some(command) => return Err(format!("unknown command '{command}'. Usage: lunch today")),
-    }
+    let command = match args.next().as_deref() {
+        None | Some("today") => Command::Today,
+        Some("slack") => Command::Slack,
+        Some(command) => {
+            return Err(format!(
+                "unknown command '{command}'. Usage: lunch [today|slack]"
+            ));
+        }
+    };
 
     if let Some(arg) = args.next() {
-        return Err(format!("unknown argument '{arg}'. Usage: lunch today"));
+        return Err(format!(
+            "unknown argument '{arg}'. Usage: lunch [today|slack]"
+        ));
     }
 
-    Ok(())
+    Ok(command)
 }
 
 #[cfg(test)]
@@ -51,7 +67,12 @@ mod tests {
 
     #[test]
     fn accepts_default_today_command() {
-        assert!(parse_args(["today".to_string()]).is_ok());
+        assert_eq!(parse_args(["today".to_string()]), Ok(Command::Today));
+    }
+
+    #[test]
+    fn accepts_slack_command() {
+        assert_eq!(parse_args(["slack".to_string()]), Ok(Command::Slack));
     }
 
     #[test]

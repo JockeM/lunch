@@ -1,7 +1,7 @@
 use crate::date::Weekday;
-use crate::domain::{
-    FailureStage, LunchItem, LunchState, NoLunchReason, RestaurantLunch, SourceError,
-};
+use crate::domain::{LunchItem, LunchState, RestaurantLunch};
+
+use super::{render_error, render_no_lunch_reason, render_price, render_stage};
 
 pub fn render_day(weekday: Weekday, lunches: &[RestaurantLunch]) -> String {
     let mut output = format!("Today ({weekday})");
@@ -35,10 +35,7 @@ fn render_state(state: &LunchState) -> String {
 }
 
 fn render_available(items: &[LunchItem]) -> String {
-    let lines = items
-        .iter()
-        .map(|item| item.description.clone())
-        .collect::<Vec<_>>();
+    let lines = items.iter().map(render_item).collect::<Vec<_>>();
 
     if lines.is_empty() {
         "No menu items found".to_string()
@@ -47,53 +44,17 @@ fn render_available(items: &[LunchItem]) -> String {
     }
 }
 
-fn render_no_lunch_reason(reason: &NoLunchReason) -> &'static str {
-    match reason {
-        NoLunchReason::Weekend => "weekend",
-        NoLunchReason::Closed => "closed",
-        NoLunchReason::MissingDay => "missing day in menu",
-        NoLunchReason::EmptyMenu => "empty menu",
+fn render_item(item: &LunchItem) -> String {
+    match &item.price {
+        Some(price) => format!("{} ({})", item.description, render_price(price)),
+        None => item.description.clone(),
     }
 }
-
-fn render_stage(stage: FailureStage) -> &'static str {
-    match stage {
-        FailureStage::Fetch => "fetch",
-        FailureStage::Parse => "parse",
-        FailureStage::Normalize => "normalize",
-    }
-}
-
-fn render_error(error: &SourceError) -> String {
-    match error {
-        SourceError::NotImplemented => "parser not implemented yet".to_string(),
-        SourceError::Network(message) => format!("network failure: {message}"),
-        SourceError::HttpStatus(status) => format!("HTTP status {status}"),
-        SourceError::MissingStructuredData => "missing structured data".to_string(),
-        SourceError::MissingExpectedElement(element) => {
-            format!("missing expected element {element}")
-        }
-        SourceError::InvalidJson(message) => format!("invalid JSON: {message}"),
-        SourceError::InvalidPrice(price) => format!("invalid price: {price}"),
-        SourceError::UnsupportedFormat(message) => format!("unsupported format: {message}"),
-    }
-}
-
-impl std::fmt::Display for crate::domain::Currency {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Sek => f.write_str("SEK"),
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn _keep_weekday_import_used(_: Weekday) {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{RestaurantId, RestaurantMeta, SourceKind};
+    use crate::domain::{FailureStage, RestaurantId, RestaurantMeta, SourceError, SourceKind};
 
     #[test]
     fn renders_stub_source_state() {
