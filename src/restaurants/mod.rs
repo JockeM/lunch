@@ -15,10 +15,10 @@ pub trait RestaurantSource {
 
 pub fn all_sources() -> Vec<Box<dyn RestaurantSource>> {
     vec![
-        Box::new(gabys::Gabys),
+        Box::new(vallagata::Vallagata),
         Box::new(jinx::JinxEmpire),
         Box::new(svinn::Svinn),
-        Box::new(vallagata::Vallagata),
+        Box::new(gabys::Gabys),
     ]
 }
 
