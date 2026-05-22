@@ -84,12 +84,14 @@ fn lunch_lines(body: &str) -> Result<Vec<String>, SourceError> {
         .ok_or(SourceError::MissingExpectedElement("LUNCHMENY"))?;
     let menu_end = lines[menu_start + 1..]
         .iter()
-        .position(|line| {
-            line.starts_with("What’s for lunch") || line.starts_with("What's for lunch")
-        })
+        .position(|line| is_after_lunch_section(line))
         .map_or(lines.len(), |position| menu_start + 1 + position);
 
     Ok(lines[menu_start..menu_end].to_vec())
+}
+
+fn is_after_lunch_section(line: &str) -> bool {
+    line.starts_with("What’s for lunch") || line.starts_with("What's for lunch")
 }
 
 fn find_weekday_lines(lines: &[String], weekday: Weekday) -> Vec<String> {
@@ -191,5 +193,29 @@ mod tests {
         let lunch = parse_lunch(GABYS_MENU, Weekday::Tuesday).unwrap();
 
         assert!(matches!(lunch, LunchState::Available { items, .. } if items.len() == 3));
+    }
+
+    #[test]
+    fn stops_at_html_encoded_after_lunch_heading() {
+        let body = r#"
+            <h2>LUNCHMENY vecka 21</h2>
+            <h3>Friday</h3>
+            <p>Halstrad lax, kokt potatis</p>
+            <h2>What&#8217;s for lunch, sweetheart?</h2>
+            <p>This should not be parsed as Friday lunch.</p>
+        "#;
+
+        let lunch = parse_lunch(body, Weekday::Friday).unwrap();
+
+        assert_eq!(
+            lunch,
+            LunchState::Available {
+                weekday: Weekday::Friday,
+                items: vec![LunchItem {
+                    description: "Halstrad lax, kokt potatis".to_string(),
+                }],
+                notes: Vec::new(),
+            }
+        );
     }
 }

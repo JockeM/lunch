@@ -1,5 +1,5 @@
 use crate::date::Weekday;
-use crate::domain::{SourceError};
+use crate::domain::SourceError;
 
 pub(super) fn fetch_body(url: &str) -> Result<String, SourceError> {
     let response = reqwest::blocking::Client::builder()
@@ -92,6 +92,8 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&amp;", "&")
         .replace("&nbsp;", " ")
         .replace("&#8203;", "")
+        .replace("&#8217;", "’")
+        .replace("&#039;", "'")
         .replace("&#x27;", "'")
         .replace("&quot;", "\"")
 }
