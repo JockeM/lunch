@@ -1,11 +1,11 @@
 use crate::date::Weekday;
 use crate::domain::{
-    FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId, RestaurantMeta,
-    SourceError, SourceKind,
+    FailureStage, LunchItem, LunchState, NoLunchReason, RestaurantId, RestaurantMeta, SourceError,
+    SourceKind,
 };
 use crate::restaurants::{
     RestaurantSource,
-    utils::{fetch_body, normalize_text, parse_swedish_weekday, sek_price, visible_text_lines},
+    utils::{fetch_body, normalize_text, parse_swedish_weekday, visible_text_lines},
 };
 
 pub struct Svinn;
@@ -44,7 +44,6 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
         });
     }
 
-    let price = parse_global_price(body);
     let menu_lines = menu_lines(body)?;
     let day_lines = find_weekday_lines(&menu_lines, weekday);
 
@@ -55,7 +54,7 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
         });
     }
 
-    let items = parse_items(day_lines, price);
+    let items = parse_items(day_lines);
 
     if items.is_empty() {
         return Ok(LunchState::NoLunchToday {
@@ -99,7 +98,7 @@ fn find_weekday_lines(lines: &[String], weekday: Weekday) -> Vec<String> {
     lines[day_start + 1..day_end].to_vec()
 }
 
-fn parse_items(lines: Vec<String>, price: Option<Price>) -> Vec<LunchItem> {
+fn parse_items(lines: Vec<String>) -> Vec<LunchItem> {
     let lines = lines
         .into_iter()
         .filter(|line| is_dish_line(line))
@@ -107,14 +106,11 @@ fn parse_items(lines: Vec<String>, price: Option<Price>) -> Vec<LunchItem> {
 
     match lines.as_slice() {
         [] => Vec::new(),
-        [single] => vec![lunch_item(single, price)],
-        [first, second] => vec![
-            lunch_item(first, price.clone()),
-            lunch_item(second, price.clone()),
-        ],
+        [single] => vec![lunch_item(single)],
+        [first, second] => vec![lunch_item(first), lunch_item(second)],
         lines => split_two_items(lines)
             .into_iter()
-            .map(|description| lunch_item(&description, price.clone()))
+            .map(|description| lunch_item(&description))
             .collect(),
     }
 }
@@ -133,10 +129,9 @@ fn split_two_items(lines: &[String]) -> Vec<String> {
     .collect()
 }
 
-fn lunch_item(description: &str, price: Option<Price>) -> LunchItem {
+fn lunch_item(description: &str) -> LunchItem {
     LunchItem {
         description: join_sentence(description),
-        price,
     }
 }
 
@@ -204,29 +199,9 @@ fn is_dish_line(line: &str) -> bool {
     !normalized.starts_with("SEN TAR VI HELG")
 }
 
-fn parse_global_price(body: &str) -> Option<Price> {
-    visible_text_lines(body).into_iter().find_map(|line| {
-        parse_price_after(&line, "Pris ").or_else(|| parse_price_after(&line, "PRIS:"))
-    })
-}
-
-fn parse_price_after(line: &str, marker: &str) -> Option<Price> {
-    let marker_start = line.find(marker)?;
-    let after_marker = line[marker_start + marker.len()..].trim();
-    let amount = after_marker
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>()
-        .parse::<u32>()
-        .ok()?;
-
-    Some(sek_price(amount))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Currency;
 
     const KVM_MENU: &str = r#"
         <h5>Lunchmeny</h5>
@@ -267,17 +242,9 @@ mod tests {
                 items: vec![
                     LunchItem {
                         description: "Saltimbocca på fläskkött fylld med lufttorkad skinka, serveras med krämig parmesanpolenta, balasamicosky samt toppas med syrlig äppel och ruccolasallad".to_string(),
-                        price: Some(Price {
-                            amount: 119,
-                            currency: Currency::Sek,
-                        }),
                     },
                     LunchItem {
                         description: "Kikärts falafel serveras med krämig parmesanpolenta, balasamicosky samt toppas med syrlig äppel och ruccolasallad".to_string(),
-                        price: Some(Price {
-                            amount: 119,
-                            currency: Currency::Sek,
-                        }),
                     },
                 ],
                 notes: Vec::new(),

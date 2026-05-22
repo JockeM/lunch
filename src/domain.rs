@@ -50,12 +50,6 @@ pub enum LunchState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LunchItem {
     pub description: String,
-    pub price: Option<Price>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Price {
-    pub amount: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +75,5 @@ pub enum SourceError {
     MissingStructuredData,
     MissingExpectedElement(&'static str),
     InvalidJson(String),
-    InvalidPrice(String),
     UnsupportedFormat(String),
 }

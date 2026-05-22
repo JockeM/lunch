@@ -1,5 +1,5 @@
 use crate::date::Weekday;
-use crate::domain::{Price, SourceError};
+use crate::domain::{SourceError};
 
 pub(super) fn fetch_body(url: &str) -> Result<String, SourceError> {
     let response = reqwest::blocking::Client::builder()
@@ -67,10 +67,6 @@ pub(super) fn parse_swedish_weekday(value: &str) -> Option<Weekday> {
     } else {
         None
     }
-}
-
-pub(super) fn sek_price(amount: u32) -> Price {
-    Price { amount }
 }
 
 fn push_text_line(lines: &mut Vec<String>, text: &mut String) {

@@ -1,11 +1,11 @@
 use crate::date::Weekday;
 use crate::domain::{
-    FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId, RestaurantMeta,
-    SourceError, SourceKind,
+    FailureStage, LunchItem, LunchState, NoLunchReason, RestaurantId, RestaurantMeta, SourceError,
+    SourceKind,
 };
 use crate::restaurants::{
     RestaurantSource,
-    utils::{fetch_body, normalize_text, sek_price, visible_text_lines},
+    utils::{fetch_body, normalize_text, visible_text_lines},
 };
 
 pub struct Gabys;
@@ -45,7 +45,6 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
     }
 
     let lines = lunch_lines(body)?;
-    let price = parse_lunch_price(&lines);
     let day_lines = find_weekday_lines(&lines, weekday);
 
     if day_lines.is_empty() {
@@ -60,7 +59,6 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
         .filter(|line| is_dish_line(line))
         .map(|description| LunchItem {
             description: normalize_text(&description),
-            price: price.clone(),
         })
         .collect::<Vec<_>>();
 
@@ -128,23 +126,9 @@ fn is_dish_line(line: &str) -> bool {
         && !normalized.to_ascii_lowercase().contains("sek / pers")
 }
 
-fn parse_lunch_price(lines: &[String]) -> Option<Price> {
-    lines.iter().find_map(|line| {
-        let sek_start = line.find("SEK")?;
-        let amount = line[..sek_start]
-            .split_whitespace()
-            .last()?
-            .parse::<u32>()
-            .ok()?;
-
-        Some(sek_price(amount))
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Currency;
 
     const GABYS_MENU: &str = r#"
         <h2>LUNCHMENY vecka 21</h2>
@@ -178,24 +162,12 @@ mod tests {
                 items: vec![
                     LunchItem {
                         description: "Bakad fisk, potatispuré, brynt smör".to_string(),
-                        price: Some(Price {
-                            amount: 139,
-                            currency: Currency::Sek,
-                        }),
                     },
                     LunchItem {
                         description: "Gaby´s flygande Jacob på kycklingbröst, ris".to_string(),
-                        price: Some(Price {
-                            amount: 139,
-                            currency: Currency::Sek,
-                        }),
                     },
                     LunchItem {
                         description: "Svamppasta, tryffel, parmesan".to_string(),
-                        price: Some(Price {
-                            amount: 139,
-                            currency: Currency::Sek,
-                        }),
                     },
                 ],
                 notes: Vec::new(),

@@ -33,7 +33,6 @@ fn render_error(error: &SourceError) -> String {
             format!("missing expected element {element}")
         }
         SourceError::InvalidJson(message) => format!("invalid JSON: {message}"),
-        SourceError::InvalidPrice(price) => format!("invalid price: {price}"),
         SourceError::UnsupportedFormat(message) => format!("unsupported format: {message}"),
     }
 }

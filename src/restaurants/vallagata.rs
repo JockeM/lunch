@@ -1,11 +1,11 @@
 use crate::date::Weekday;
 use crate::domain::{
-    FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId, RestaurantMeta,
-    SourceError, SourceKind,
+    FailureStage, LunchItem, LunchState, NoLunchReason, RestaurantId, RestaurantMeta, SourceError,
+    SourceKind,
 };
 use crate::restaurants::{
     RestaurantSource,
-    utils::{fetch_body, parse_swedish_weekday, sek_price, visible_text_lines},
+    utils::{fetch_body, parse_swedish_weekday, visible_text_lines},
 };
 
 pub struct Vallagata;
@@ -44,9 +44,8 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
         });
     }
 
-    let price = parse_global_price(body);
     let section_lines = find_weekday_section_lines(body, weekday)?;
-    let items = parse_items(section_lines, price.as_ref());
+    let items = parse_items(section_lines);
 
     if items.is_empty() {
         return Ok(LunchState::NoLunchToday {
@@ -62,18 +61,17 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
     })
 }
 
-fn parse_items(lines: Vec<String>, price: Option<&Price>) -> Vec<LunchItem> {
+fn parse_items(lines: Vec<String>) -> Vec<LunchItem> {
     lines
         .into_iter()
         .filter(|line| is_dish_line(line))
-        .map(|description| lunch_item(&description, price.cloned()))
+        .map(|description| lunch_item(&description))
         .collect()
 }
 
-fn lunch_item(description: &str, price: Option<Price>) -> LunchItem {
+fn lunch_item(description: &str) -> LunchItem {
     LunchItem {
         description: format_dish_description(description),
-        price,
     }
 }
 
@@ -158,21 +156,9 @@ fn parse_category(line: &str) -> Option<String> {
     Some(category.to_string())
 }
 
-fn parse_global_price(body: &str) -> Option<Price> {
-    visible_text_lines(body).into_iter().find_map(|line| {
-        let upper = line.to_uppercase();
-        let price_start = upper.find("PRIS:")?;
-        let after_price = line[price_start + "PRIS:".len()..].trim();
-        let amount = after_price.split_whitespace().next()?.parse::<u32>().ok()?;
-
-        Some(sek_price(amount))
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Currency;
 
     const WIX_MENU: &str = r#"
         <section>
@@ -214,31 +200,15 @@ mod tests {
                     LunchItem {
                         description: "Bulgogi | Strimlat nötkött | Jasminris | Kålsallad"
                             .to_string(),
-                        price: Some(Price {
-                            amount: 132,
-                            currency: Currency::Sek,
-                        }),
                     },
                     LunchItem {
                         description: "Dagens fångst | Skordalia | Tomat | Oliver".to_string(),
-                        price: Some(Price {
-                            amount: 132,
-                            currency: Currency::Sek,
-                        }),
                     },
                     LunchItem {
                         description: "Halloumibiff | Skordalia | Tomat | Oliver".to_string(),
-                        price: Some(Price {
-                            amount: 132,
-                            currency: Currency::Sek,
-                        }),
                     },
                     LunchItem {
                         description: "Nudelwok | Kyckling | Vetenudlar | Salladslök".to_string(),
-                        price: Some(Price {
-                            amount: 132,
-                            currency: Currency::Sek,
-                        }),
                     },
                 ],
                 notes: Vec::new(),

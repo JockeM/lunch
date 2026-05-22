@@ -2,12 +2,12 @@
 
 use crate::date::Weekday;
 use crate::domain::{
-    FailureStage, LunchItem, LunchState, NoLunchReason, Price, RestaurantId, RestaurantMeta,
-    SourceError, SourceKind,
+    FailureStage, LunchItem, LunchState, NoLunchReason, RestaurantId, RestaurantMeta, SourceError,
+    SourceKind,
 };
 use crate::restaurants::{
     RestaurantSource,
-    utils::{fetch_body, sek_price, visible_text_lines},
+    utils::{fetch_body, visible_text_lines},
 };
 use serde_json::Value;
 
@@ -80,7 +80,6 @@ fn parse_structured_lunch(body: &str, weekday: Weekday) -> Result<LunchState, So
         weekday,
         items: vec![LunchItem {
             description: description.to_string(),
-            price: parse_price(item)?,
         }],
         notes: Vec::new(),
     })
@@ -114,40 +113,16 @@ fn parse_visible_lunch(body: &str, weekday: Weekday) -> Result<LunchState, Sourc
         .position(|line| parse_weekday(line).is_some())
         .map_or(lines.len(), |position| item_start + 1 + position);
     let mut block = lines[item_start + 1..next_day].iter();
-    let first = block
+    let description = block
         .next()
         .ok_or(SourceError::MissingExpectedElement("lunch description"))?;
-    let (price, description) = if let Some(price) = parse_price_text(first)? {
-        let description = block
-            .next()
-            .ok_or(SourceError::MissingExpectedElement("lunch description"))?;
-
-        (Some(price), description)
-    } else {
-        (None, first)
-    };
-
     Ok(LunchState::Available {
         weekday,
         items: vec![LunchItem {
             description: description.clone(),
-            price,
         }],
         notes: Vec::new(),
     })
-}
-
-fn parse_price_text(value: &str) -> Result<Option<Price>, SourceError> {
-    let normalized = value.trim().to_ascii_lowercase();
-    let Some(amount) = normalized.strip_suffix(" kr") else {
-        return Ok(None);
-    };
-    let amount = amount
-        .trim()
-        .parse::<u32>()
-        .map_err(|_| SourceError::InvalidPrice(value.to_string()))?;
-
-    Ok(Some(sek_price(amount)))
 }
 
 fn parse_menu_json(body: &str) -> Result<Value, SourceError> {
@@ -236,21 +211,6 @@ fn parse_weekday(value: &str) -> Option<Weekday> {
     }
 }
 
-fn parse_price(item: &Value) -> Result<Option<Price>, SourceError> {
-    let Some(offer) = item.get("offers") else {
-        return Ok(None);
-    };
-    let Some(price) = offer.get("price").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-    let amount = price
-        .trim()
-        .parse::<u32>()
-        .map_err(|_| SourceError::InvalidPrice(price.to_string()))?;
-
-    Ok(Some(Price { amount }))
-}
-
 fn is_type(value: &Value, expected_type: &str) -> bool {
     match value.get("@type") {
         Some(Value::String(actual_type)) => actual_type == expected_type,
@@ -310,10 +270,6 @@ mod tests {
                 items: vec![LunchItem {
                     description: "Ground Pork or Plant-Based Mince / Sambal / Coconut Rice"
                         .to_string(),
-                    price: Some(Price {
-                        amount: 135,
-                        currency: Currency::Sek,
-                    }),
                 }],
                 notes: Vec::new(),
             }
@@ -339,10 +295,8 @@ mod tests {
                 <h3>Lunch</h3>
                 <p>W.21</p>
                 <h4>Monday</h4>
-                <p>135 kr</p>
                 <p>Pork Belly or Tofu / Plum Glaze / Garlic Mayo</p>
                 <h4>Wednesday</h4>
-                <p>135 kr</p>
                 <p>Ground Pork or Plant-Based Mince / Sambal / Coconut Rice</p>
                 <h4>Thursday</h4>
                 <p>Beef Chuck or Portobello / Smoky Hoisin</p>
@@ -359,10 +313,6 @@ mod tests {
                 items: vec![LunchItem {
                     description: "Ground Pork or Plant-Based Mince / Sambal / Coconut Rice"
                         .to_string(),
-                    price: Some(Price {
-                        amount: 135,
-                        currency: Currency::Sek,
-                    }),
                 }],
                 notes: Vec::new(),
             }

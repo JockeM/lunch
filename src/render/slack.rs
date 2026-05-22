@@ -108,7 +108,7 @@ fn slack_link(url: &str, label: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Price, RestaurantId, RestaurantMeta, SourceKind};
+    use crate::domain::{RestaurantId, RestaurantMeta, SourceKind};
 
     #[test]
     fn renders_slack_payload() {
@@ -123,7 +123,6 @@ mod tests {
                 weekday: Weekday::Wednesday,
                 items: vec![LunchItem {
                     description: "Bibimbap & greens".to_string(),
-                    price: Some(Price { amount: 135 }),
                 }],
                 notes: Vec::new(),
             },
@@ -147,7 +146,7 @@ mod tests {
             payload["blocks"][2]["text"]["text"]
                 .as_str()
                 .unwrap()
-                .contains("Bibimbap &amp; greens _135 SEK_")
+                .contains("Bibimbap &amp; greens")
         );
     }
 }
