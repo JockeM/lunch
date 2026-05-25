@@ -48,6 +48,13 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
     let day_lines = find_weekday_lines(&menu_lines, weekday);
 
     if day_lines.is_empty() {
+        if menu_lines.iter().any(|line| is_empty_menu_notice(line)) {
+            return Ok(LunchState::NoLunchToday {
+                weekday,
+                reason: NoLunchReason::EmptyMenu,
+            });
+        }
+
         return Ok(LunchState::NoLunchToday {
             weekday,
             reason: NoLunchReason::MissingDay,
@@ -199,6 +206,12 @@ fn is_dish_line(line: &str) -> bool {
     !normalized.starts_with("SEN TAR VI HELG")
 }
 
+fn is_empty_menu_notice(line: &str) -> bool {
+    line.trim()
+        .to_uppercase()
+        .starts_with("JUST NU HAR VI INGEN LUNCHMATSEDEL")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +283,37 @@ mod tests {
             Ok(LunchState::NoLunchToday {
                 weekday: Weekday::Friday,
                 reason: NoLunchReason::MissingDay,
+            })
+        );
+    }
+
+    #[test]
+    fn returns_empty_menu_for_kvartersmenyn_no_menu_notice() {
+        let body = r#"
+            <h5>Lunchmeny</h5>
+            <p>11:00 - 14:00</p>
+            <p>Pris 119:-</p>
+            <p><b>VECKA 22, 2026</b></p>
+            <div class="day">
+                <div class="meny" style="clear:left;line-height:1.6em;padding-bottom:2em;">
+                    <b>Just nu har vi ingen lunchmatsedel<br><br>
+                    tillgänglig, se gärna vår<br><br>
+                    à la cartemeny eller kom förbi<i style="opacity: 0.1;color: #eee;">pogre</i><br><br>
+                    och se vad vi har att erbjuda!<i style="opacity: 0.1;color: #eee;">f</i><br><br>
+                    Välkomna!</b><br>
+                </div>
+                <div class="meny" style="clear:left;line-height:1.6em;padding-top:2em;border-top:1px solid #191e4f">
+                    <b>PRIS: 119:-</b><br />Inkl. sallad, hembakt bröd<br />
+                    <b>Öppet:</b> <b>Mån-Fre</b> 11:00-14:00
+                </div>
+            </div>
+        "#;
+
+        assert_eq!(
+            parse_lunch(body, Weekday::Monday),
+            Ok(LunchState::NoLunchToday {
+                weekday: Weekday::Monday,
+                reason: NoLunchReason::EmptyMenu,
             })
         );
     }
