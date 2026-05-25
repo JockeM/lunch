@@ -112,7 +112,9 @@ fn parse_visible_lunch(body: &str, weekday: Weekday) -> Result<LunchState, Sourc
         .iter()
         .position(|line| parse_weekday(line).is_some())
         .map_or(lines.len(), |position| item_start + 1 + position);
-    let mut block = lines[item_start + 1..next_day].iter();
+    let mut block = lines[item_start + 1..next_day]
+        .iter()
+        .filter(|line| !is_price_line(line));
     let description = block
         .next()
         .ok_or(SourceError::MissingExpectedElement("lunch description"))?;
@@ -157,7 +159,7 @@ fn extract_json_ld_scripts(body: &str) -> Vec<&str> {
         };
         let script_end = content_start + script_end;
 
-        if tag.contains("application/ld+json") {
+        if tag.contains("application/ld+json") || tag.contains("application/json") {
             scripts.push(body[content_start..script_end].trim());
         }
 
@@ -174,13 +176,7 @@ fn find_menu(value: Value) -> Option<Value> {
 
     match value {
         Value::Array(values) => values.into_iter().find_map(find_menu),
-        Value::Object(mut object) => {
-            if let Some(graph) = object.remove("@graph") {
-                find_menu(graph)
-            } else {
-                None
-            }
-        }
+        Value::Object(object) => object.into_values().find_map(find_menu),
         _ => None,
     }
 }
@@ -209,6 +205,15 @@ fn parse_weekday(value: &str) -> Option<Weekday> {
         "sunday" => Some(Weekday::Sunday),
         _ => None,
     }
+}
+
+fn is_price_line(value: &str) -> bool {
+    let value = value.trim().to_ascii_lowercase();
+    let Some(price) = value.strip_suffix(" kr") else {
+        return false;
+    };
+
+    !price.is_empty() && price.chars().all(|character| character.is_ascii_digit())
 }
 
 fn is_type(value: &Value, expected_type: &str) -> bool {
@@ -313,6 +318,55 @@ mod tests {
                 items: vec![LunchItem {
                     description: "Ground Pork or Plant-Based Mince / Sambal / Coconut Rice"
                         .to_string(),
+                }],
+                notes: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_visible_lunch_when_price_precedes_description() {
+        let body = r#"
+            <html>
+              <body>
+                <h3>Lunch</h3>
+                <h4>Monday</h4>
+                <p>135 kr</p>
+                <p>Pork Belly or Tofu / Plum Glaze / Garlic Mayo</p>
+                <h4>Tuesday</h4>
+                <p>Chicken or Cauliflower / Red Curry</p>
+              </body>
+            </html>
+        "#;
+
+        let lunch = parse_lunch(body, Weekday::Monday).unwrap();
+
+        assert_eq!(
+            lunch,
+            LunchState::Available {
+                weekday: Weekday::Monday,
+                items: vec![LunchItem {
+                    description: "Pork Belly or Tofu / Plum Glaze / Garlic Mayo".to_string(),
+                }],
+                notes: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn finds_menu_nested_in_next_data() {
+        let body = format!(
+            r#"<html><body><script id="__NEXT_DATA__" type="application/json">{{"props":{{"pageProps":{{"structuredData":[{MENU_JSON}]}}}}}}</script></body></html>"#
+        );
+
+        let lunch = parse_lunch(&body, Weekday::Monday).unwrap();
+
+        assert_eq!(
+            lunch,
+            LunchState::Available {
+                weekday: Weekday::Monday,
+                items: vec![LunchItem {
+                    description: "Pork Belly or Tofu / Plum Glaze / Garlic Mayo".to_string(),
                 }],
                 notes: Vec::new(),
             }
