@@ -112,17 +112,18 @@ fn parse_visible_lunch(body: &str, weekday: Weekday) -> Result<LunchState, Sourc
         .iter()
         .position(|line| parse_weekday(line).is_some())
         .map_or(lines.len(), |position| item_start + 1 + position);
-    let mut block = lines[item_start + 1..next_day]
+    let description = lines[item_start + 1..next_day]
         .iter()
-        .filter(|line| !is_price_line(line));
-    let description = block
-        .next()
+        .filter(|line| !is_price_line(line))
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let description = (!description.is_empty())
+        .then_some(description)
         .ok_or(SourceError::MissingExpectedElement("lunch description"))?;
     Ok(LunchState::Available {
         weekday,
-        items: vec![LunchItem {
-            description: description.clone(),
-        }],
+        items: vec![LunchItem { description }],
         notes: Vec::new(),
     })
 }
@@ -347,6 +348,37 @@ mod tests {
                 weekday: Weekday::Monday,
                 items: vec![LunchItem {
                     description: "Pork Belly or Tofu / Plum Glaze / Garlic Mayo".to_string(),
+                }],
+                notes: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_visible_lunch_when_description_is_split_by_formatting_tags() {
+        let body = r#"
+            <html>
+              <body>
+                <h3>Lunch</h3>
+                <h4>Tuesday</h4>
+                <span>135 kr</span>
+                <p><b>Pork or tofu</b> / Hung Lay curry / Carrot salad / Cilantro / Crispy cashews</p>
+                <h4>Wednesday</h4>
+                <p><b>Chicken or pointed cabbage</b> / Lemongrass jus</p>
+              </body>
+            </html>
+        "#;
+
+        let lunch = parse_lunch(body, Weekday::Tuesday).unwrap();
+
+        assert_eq!(
+            lunch,
+            LunchState::Available {
+                weekday: Weekday::Tuesday,
+                items: vec![LunchItem {
+                    description:
+                        "Pork or tofu / Hung Lay curry / Carrot salad / Cilantro / Crispy cashews"
+                            .to_string(),
                 }],
                 notes: Vec::new(),
             }
