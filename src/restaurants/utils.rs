@@ -91,6 +91,8 @@ fn decode_html_entities(value: &str) -> String {
         .replace("&eacute;", "é")
         .replace("&amp;", "&")
         .replace("&nbsp;", " ")
+        .replace("&rsquo;", "’")
+        .replace("&lsquo;", "‘")
         .replace("&#8203;", "")
         .replace("&#8217;", "’")
         .replace("&#039;", "'")

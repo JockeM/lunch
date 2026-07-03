@@ -79,16 +79,29 @@ fn format_dish_description(description: &str) -> String {
     description
         .split('|')
         .filter_map(|part| {
-            let part = part.trim();
+            let part = clean_dish_part(part);
 
             if part.is_empty() {
                 None
             } else {
-                Some(capitalize_first_word(part))
+                Some(capitalize_first_word(&part))
             }
         })
         .collect::<Vec<_>>()
         .join(" | ")
+}
+
+fn clean_dish_part(part: &str) -> String {
+    part.replace("’’", " ")
+        .replace("‘‘", " ")
+        .replace("\"\"", " ")
+        .trim_matches(|character: char| {
+            character.is_whitespace()
+                || matches!(character, '\'' | '"' | '’' | '‘')
+        })
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn capitalize_first_word(value: &str) -> String {
@@ -99,7 +112,19 @@ fn capitalize_first_word(value: &str) -> String {
     let first = first_character.to_uppercase().collect::<String>();
     let rest = value[first_character_len..].to_lowercase();
 
-    format!("{first}{rest}")
+    apply_known_casing(&format!("{first}{rest}"))
+}
+
+fn apply_known_casing(value: &str) -> String {
+    value
+        .split_whitespace()
+        .map(|word| match word {
+            "bellman" => "Bellman".to_string(),
+            "ceasar" | "caesar" => "Caesar".to_string(),
+            _ => word.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn find_weekday_section_lines(body: &str, weekday: Weekday) -> Result<Vec<String>, SourceError> {
@@ -227,6 +252,34 @@ mod tests {
         let lunch = parse_lunch(body, Weekday::Wednesday).unwrap();
 
         assert!(matches!(lunch, LunchState::Available { .. }));
+    }
+
+    #[test]
+    fn decodes_and_cleans_decorative_dish_quotes() {
+        let body = r"
+            <section>
+              <p>Kyckling&rsquo;&rsquo;ceasar&rsquo;&rsquo; | Romansallad | Bacon</p>
+              <p>&rsquo;&rsquo;pytt bellman&rsquo;&rsquo; | Chilisås | Persilja</p>
+              <p>ONSDAG</p>
+            </section>
+        ";
+        let lunch = parse_lunch(body, Weekday::Wednesday).unwrap();
+
+        assert_eq!(
+            lunch,
+            LunchState::Available {
+                weekday: Weekday::Wednesday,
+                items: vec![
+                    LunchItem {
+                        description: "Kyckling Caesar | Romansallad | Bacon".to_string(),
+                    },
+                    LunchItem {
+                        description: "Pytt Bellman | Chilisås | Persilja".to_string(),
+                    },
+                ],
+                notes: Vec::new(),
+            }
+        );
     }
 
     #[test]
