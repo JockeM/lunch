@@ -28,6 +28,13 @@ fn render_error(error: &SourceError) -> String {
         SourceError::NotImplemented => "parser not implemented yet".to_string(),
         SourceError::Network(message) => format!("network failure: {message}"),
         SourceError::HttpStatus(status) => format!("HTTP status {status}"),
+        SourceError::OutputTooLarge {
+            field,
+            actual,
+            limit,
+        } => {
+            format!("{field} too large: {actual} exceeds limit {limit}")
+        }
         SourceError::MissingStructuredData => "missing structured data".to_string(),
         SourceError::MissingExpectedElement(element) => {
             format!("missing expected element {element}")

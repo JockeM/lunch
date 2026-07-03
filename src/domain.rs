@@ -72,6 +72,11 @@ pub enum SourceError {
     NotImplemented,
     Network(String),
     HttpStatus(u16),
+    OutputTooLarge {
+        field: &'static str,
+        actual: usize,
+        limit: usize,
+    },
     MissingStructuredData,
     MissingExpectedElement(&'static str),
     InvalidJson(String),
