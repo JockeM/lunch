@@ -131,8 +131,7 @@ fn parse_visible_lunch(body: &str, weekday: Weekday) -> Result<LunchState, Sourc
 fn parse_menu_json(body: &str) -> Result<Value, SourceError> {
     parse_json_candidates(body)
         .into_iter()
-        .find_map(|candidate| serde_json::from_str::<Value>(candidate).ok())
-        .and_then(find_menu)
+        .find_map(|candidate| serde_json::from_str::<Value>(candidate).ok().and_then(find_menu))
         .ok_or(SourceError::MissingStructuredData)
 }
 
@@ -291,6 +290,34 @@ mod tests {
         let lunch = parse_lunch(&body, Weekday::Monday).unwrap();
 
         assert!(matches!(lunch, LunchState::Available { .. }));
+    }
+
+    #[test]
+    fn skips_non_menu_json_ld_scripts() {
+        let body = format!(
+            r#"
+            <html>
+              <head>
+                <script type="application/ld+json">{{"@context":"https://schema.org","@type":"WebSite","name":"Jinx Empire"}}</script>
+                <script type="application/ld+json">{MENU_JSON}</script>
+              </head>
+            </html>
+            "#
+        );
+
+        let lunch = parse_lunch(&body, Weekday::Wednesday).unwrap();
+
+        assert_eq!(
+            lunch,
+            LunchState::Available {
+                weekday: Weekday::Wednesday,
+                items: vec![LunchItem {
+                    description: "Ground Pork or Plant-Based Mince / Sambal / Coconut Rice"
+                        .to_string(),
+                }],
+                notes: Vec::new(),
+            }
+        );
     }
 
     #[test]
