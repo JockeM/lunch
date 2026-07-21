@@ -1,4 +1,4 @@
-use crate::date::Weekday;
+use crate::date::{Date, Weekday};
 use crate::domain::{FailureStage, LunchState, RestaurantLunch, SourceError};
 use crate::restaurants::{self, RestaurantSource};
 
@@ -7,18 +7,18 @@ const MAX_ITEMS_PER_RESTAURANT: usize = 20;
 const MAX_ITEM_DESCRIPTION_CHARS: usize = 500;
 
 pub fn load_todays_lunches() -> (Weekday, Vec<RestaurantLunch>) {
-    let weekday = Weekday::today_utc();
-    let lunches = load_lunches_for_weekday(weekday);
+    let date = Date::today_utc();
+    let lunches = load_lunches_for_date(date);
 
-    (weekday, lunches)
+    (date.weekday, lunches)
 }
 
-fn load_lunches_for_weekday(weekday: Weekday) -> Vec<RestaurantLunch> {
-    load_lunches_from_sources(weekday, restaurants::all_sources())
+fn load_lunches_for_date(date: Date) -> Vec<RestaurantLunch> {
+    load_lunches_from_sources(date, restaurants::all_sources())
 }
 
 fn load_lunches_from_sources(
-    weekday: Weekday,
+    date: Date,
     sources: Vec<Box<dyn RestaurantSource>>,
 ) -> Vec<RestaurantLunch> {
     let source_count = sources.len();
@@ -35,7 +35,7 @@ fn load_lunches_from_sources(
 
         lunches.push(RestaurantLunch {
             meta: source.meta(),
-            state: guard_lunch_state(source.lunch_for(weekday)),
+            state: guard_lunch_state(source.lunch_for(date)),
         });
     }
 
@@ -131,7 +131,14 @@ mod tests {
             .map(|_| Box::new(StubSource) as Box<dyn RestaurantSource>)
             .collect::<Vec<_>>();
 
-        let lunches = load_lunches_from_sources(Weekday::Wednesday, sources);
+        let lunches = load_lunches_from_sources(
+            Date {
+                iso_year: 2026,
+                iso_week: 21,
+                weekday: Weekday::Wednesday,
+            },
+            sources,
+        );
 
         assert_eq!(lunches.len(), MAX_RESTAURANTS + 1);
         assert!(matches!(lunches[0].state, LunchState::Available { .. }));
@@ -161,9 +168,9 @@ mod tests {
             }
         }
 
-        fn lunch_for(&self, weekday: Weekday) -> LunchState {
+        fn lunch_for(&self, date: Date) -> LunchState {
             LunchState::Available {
-                weekday,
+                weekday: date.weekday,
                 items: repeated_items(1),
                 notes: Vec::new(),
             }

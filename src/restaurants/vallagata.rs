@@ -1,4 +1,4 @@
-use crate::date::Weekday;
+use crate::date::{Date, Weekday};
 use crate::domain::{
     FailureStage, LunchItem, LunchState, NoLunchReason, RestaurantId, RestaurantMeta, SourceError,
     SourceKind,
@@ -20,14 +20,12 @@ impl RestaurantSource for Vallagata {
         }
     }
 
-    fn lunch_for(&self, weekday: Weekday) -> LunchState {
+    fn lunch_for(&self, date: Date) -> LunchState {
         match fetch_body(self.meta().source_url) {
-            Ok(body) => {
-                parse_lunch(&body, weekday).unwrap_or_else(|error| LunchState::Unavailable {
-                    stage: FailureStage::Parse,
-                    error,
-                })
-            }
+            Ok(body) => parse_lunch(&body, date).unwrap_or_else(|error| LunchState::Unavailable {
+                stage: FailureStage::Parse,
+                error,
+            }),
             Err(error) => LunchState::Unavailable {
                 stage: FailureStage::Fetch,
                 error,
@@ -36,28 +34,51 @@ impl RestaurantSource for Vallagata {
     }
 }
 
-pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceError> {
-    if matches!(weekday, Weekday::Saturday | Weekday::Sunday) {
+pub fn parse_lunch(body: &str, date: Date) -> Result<LunchState, SourceError> {
+    if matches!(date.weekday, Weekday::Saturday | Weekday::Sunday) {
         return Ok(LunchState::NoLunchToday {
-            weekday,
+            weekday: date.weekday,
             reason: NoLunchReason::Weekend,
         });
     }
 
-    let section_lines = find_weekday_section_lines(body, weekday)?;
+    if menu_week(body).is_some_and(|menu_week| menu_week != date.iso_week) {
+        return Ok(LunchState::NoLunchToday {
+            weekday: date.weekday,
+            reason: NoLunchReason::Closed,
+        });
+    }
+
+    let section_lines = find_weekday_section_lines(body, date.weekday)?;
     let items = parse_items(section_lines);
 
     if items.is_empty() {
         return Ok(LunchState::NoLunchToday {
-            weekday,
+            weekday: date.weekday,
             reason: NoLunchReason::MissingDay,
         });
     }
 
     Ok(LunchState::Available {
-        weekday,
+        weekday: date.weekday,
         items,
         notes: Vec::new(),
+    })
+}
+
+fn menu_week(body: &str) -> Option<u8> {
+    visible_text_lines(body).into_iter().find_map(|line| {
+        parse_swedish_weekday(&line)?;
+        let line = line.to_lowercase();
+        let (_, week_text) = line.split_once("vecka")?;
+        let digits = week_text
+            .trim_start()
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>();
+        let week = digits.parse::<u8>().ok()?;
+
+        (1..=53).contains(&week).then_some(week)
     })
 }
 
@@ -185,6 +206,14 @@ fn parse_category(line: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    fn date(weekday: Weekday) -> Date {
+        Date {
+            iso_year: 2026,
+            iso_week: 21,
+            weekday,
+        }
+    }
+
     const WIX_MENU: &str = r#"
         <section>
           <p>LÅNGBAKAD FLÄSKKARRE| morotspuré |rostad potatis</p>
@@ -215,7 +244,7 @@ mod tests {
 
     #[test]
     fn parses_weekday_section() {
-        let lunch = parse_lunch(WIX_MENU, Weekday::Wednesday).unwrap();
+        let lunch = parse_lunch(WIX_MENU, date(Weekday::Wednesday)).unwrap();
 
         assert_eq!(
             lunch,
@@ -249,7 +278,7 @@ mod tests {
               <p>ONSDAG&nbsp;</p>
             </section>
         "#;
-        let lunch = parse_lunch(body, Weekday::Wednesday).unwrap();
+        let lunch = parse_lunch(body, date(Weekday::Wednesday)).unwrap();
 
         assert!(matches!(lunch, LunchState::Available { .. }));
     }
@@ -263,7 +292,7 @@ mod tests {
               <p>ONSDAG</p>
             </section>
         ";
-        let lunch = parse_lunch(body, Weekday::Wednesday).unwrap();
+        let lunch = parse_lunch(body, date(Weekday::Wednesday)).unwrap();
 
         assert_eq!(
             lunch,
@@ -287,6 +316,24 @@ mod tests {
         assert_eq!(
             format_dish_description("BULGOGI |strimlat nötkött |jasminris | |"),
             "Bulgogi | Strimlat nötkött | Jasminris"
+        );
+    }
+
+    #[test]
+    fn returns_closed_when_only_an_old_menu_is_published() {
+        assert_eq!(
+            parse_lunch(
+                WIX_MENU,
+                Date {
+                    iso_year: 2026,
+                    iso_week: 30,
+                    weekday: Weekday::Wednesday,
+                }
+            ),
+            Ok(LunchState::NoLunchToday {
+                weekday: Weekday::Wednesday,
+                reason: NoLunchReason::Closed,
+            })
         );
     }
 }

@@ -1,4 +1,4 @@
-use crate::date::Weekday;
+use crate::date::{Date, Weekday};
 use crate::domain::{
     FailureStage, LunchItem, LunchState, NoLunchReason, RestaurantId, RestaurantMeta, SourceError,
     SourceKind,
@@ -20,10 +20,10 @@ impl RestaurantSource for Svinn {
         }
     }
 
-    fn lunch_for(&self, weekday: Weekday) -> LunchState {
+    fn lunch_for(&self, date: Date) -> LunchState {
         match fetch_body(self.meta().source_url) {
             Ok(body) => {
-                parse_lunch(&body, weekday).unwrap_or_else(|error| LunchState::Unavailable {
+                parse_lunch(&body, date.weekday).unwrap_or_else(|error| LunchState::Unavailable {
                     stage: FailureStage::Parse,
                     error,
                 })

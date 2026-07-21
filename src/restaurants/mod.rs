@@ -4,13 +4,13 @@ mod svinn;
 mod utils;
 mod vallagata;
 
-use crate::date::Weekday;
+use crate::date::Date;
 use crate::domain::{LunchState, RestaurantMeta};
 
 pub trait RestaurantSource {
     fn meta(&self) -> RestaurantMeta;
 
-    fn lunch_for(&self, weekday: Weekday) -> LunchState;
+    fn lunch_for(&self, date: Date) -> LunchState;
 }
 
 pub fn all_sources() -> Vec<Box<dyn RestaurantSource>> {

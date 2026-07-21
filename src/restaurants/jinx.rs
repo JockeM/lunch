@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::date::Weekday;
+use crate::date::{Date, Weekday};
 use crate::domain::{
     FailureStage, LunchItem, LunchState, NoLunchReason, RestaurantId, RestaurantMeta, SourceError,
     SourceKind,
@@ -23,14 +23,12 @@ impl RestaurantSource for JinxEmpire {
         }
     }
 
-    fn lunch_for(&self, weekday: Weekday) -> LunchState {
+    fn lunch_for(&self, date: Date) -> LunchState {
         match fetch_body(self.meta().source_url) {
-            Ok(body) => {
-                parse_lunch(&body, weekday).unwrap_or_else(|error| LunchState::Unavailable {
-                    stage: FailureStage::Parse,
-                    error,
-                })
-            }
+            Ok(body) => parse_lunch(&body, date).unwrap_or_else(|error| LunchState::Unavailable {
+                stage: FailureStage::Parse,
+                error,
+            }),
             Err(error) => LunchState::Unavailable {
                 stage: FailureStage::Fetch,
                 error,
@@ -39,12 +37,60 @@ impl RestaurantSource for JinxEmpire {
     }
 }
 
-pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceError> {
-    match parse_structured_lunch(body, weekday) {
+pub fn parse_lunch(body: &str, date: Date) -> Result<LunchState, SourceError> {
+    if is_summer_break(body, date.iso_week) {
+        return Ok(LunchState::NoLunchToday {
+            weekday: date.weekday,
+            reason: NoLunchReason::Closed,
+        });
+    }
+
+    match parse_structured_lunch(body, date.weekday) {
         Ok(lunch) => Ok(lunch),
-        Err(SourceError::MissingStructuredData) => parse_visible_lunch(body, weekday),
+        Err(SourceError::MissingStructuredData) => parse_visible_lunch(body, date.weekday),
         Err(error) => Err(error),
     }
+}
+
+fn is_summer_break(body: &str, current_week: u8) -> bool {
+    let body = body.to_ascii_lowercase();
+    let Some(break_text) = body
+        .split_once("summer break from week ")
+        .map(|(_, break_text)| break_text)
+    else {
+        return false;
+    };
+    let Some(start_week) = parse_leading_week(break_text) else {
+        return false;
+    };
+    let Some(return_text) = break_text
+        .find("return")
+        .map(|return_start| &break_text[return_start..])
+    else {
+        return false;
+    };
+    let Some(return_week) = return_text
+        .split_once("week ")
+        .and_then(|(_, week_text)| parse_leading_week(week_text))
+    else {
+        return false;
+    };
+
+    if start_week < return_week {
+        (start_week..return_week).contains(&current_week)
+    } else {
+        current_week >= start_week || current_week < return_week
+    }
+}
+
+fn parse_leading_week(value: &str) -> Option<u8> {
+    let digits = value
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>();
+    let week = digits.parse::<u8>().ok()?;
+
+    (1..=53).contains(&week).then_some(week)
 }
 
 fn parse_structured_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceError> {
@@ -230,6 +276,14 @@ fn is_type(value: &Value, expected_type: &str) -> bool {
 mod tests {
     use super::*;
 
+    fn date(weekday: Weekday) -> Date {
+        Date {
+            iso_year: 2026,
+            iso_week: 21,
+            weekday,
+        }
+    }
+
     const MENU_JSON: &str = r#"{
         "@context": "https://schema.org",
         "@type": "Menu",
@@ -266,7 +320,7 @@ mod tests {
 
     #[test]
     fn parses_raw_menu_json_for_weekday() {
-        let lunch = parse_lunch(MENU_JSON, Weekday::Wednesday).unwrap();
+        let lunch = parse_lunch(MENU_JSON, date(Weekday::Wednesday)).unwrap();
 
         assert_eq!(
             lunch,
@@ -287,7 +341,7 @@ mod tests {
             r#"<html><head><script type="application/ld+json">{MENU_JSON}</script></head></html>"#
         );
 
-        let lunch = parse_lunch(&body, Weekday::Monday).unwrap();
+        let lunch = parse_lunch(&body, date(Weekday::Monday)).unwrap();
 
         assert!(matches!(lunch, LunchState::Available { .. }));
     }
@@ -305,7 +359,7 @@ mod tests {
             "#
         );
 
-        let lunch = parse_lunch(&body, Weekday::Wednesday).unwrap();
+        let lunch = parse_lunch(&body, date(Weekday::Wednesday)).unwrap();
 
         assert_eq!(
             lunch,
@@ -337,7 +391,7 @@ mod tests {
             </html>
         "#;
 
-        let lunch = parse_lunch(body, Weekday::Wednesday).unwrap();
+        let lunch = parse_lunch(body, date(Weekday::Wednesday)).unwrap();
 
         assert_eq!(
             lunch,
@@ -367,7 +421,7 @@ mod tests {
             </html>
         "#;
 
-        let lunch = parse_lunch(body, Weekday::Monday).unwrap();
+        let lunch = parse_lunch(body, date(Weekday::Monday)).unwrap();
 
         assert_eq!(
             lunch,
@@ -396,7 +450,7 @@ mod tests {
             </html>
         "#;
 
-        let lunch = parse_lunch(body, Weekday::Tuesday).unwrap();
+        let lunch = parse_lunch(body, date(Weekday::Tuesday)).unwrap();
 
         assert_eq!(
             lunch,
@@ -418,7 +472,7 @@ mod tests {
             r#"<html><body><script id="__NEXT_DATA__" type="application/json">{{"props":{{"pageProps":{{"structuredData":[{MENU_JSON}]}}}}}}</script></body></html>"#
         );
 
-        let lunch = parse_lunch(&body, Weekday::Monday).unwrap();
+        let lunch = parse_lunch(&body, date(Weekday::Monday)).unwrap();
 
         assert_eq!(
             lunch,
@@ -435,8 +489,54 @@ mod tests {
     #[test]
     fn errors_when_structured_menu_is_missing() {
         assert_eq!(
-            parse_lunch("{}", Weekday::Monday),
+            parse_lunch("{}", date(Weekday::Monday)),
             Err(SourceError::MissingStructuredData)
         );
+    }
+
+    #[test]
+    fn returns_closed_during_published_summer_break() {
+        let body = format!(
+            r#"<script type="application/ld+json">{{
+                "description": "Our Lunch service is on summer break from Week 28 and will return on Monday of Week 33.",
+                "menu": {MENU_JSON}
+            }}</script>"#
+        );
+
+        assert_eq!(
+            parse_lunch(
+                &body,
+                Date {
+                    iso_year: 2026,
+                    iso_week: 30,
+                    weekday: Weekday::Tuesday,
+                }
+            ),
+            Ok(LunchState::NoLunchToday {
+                weekday: Weekday::Tuesday,
+                reason: NoLunchReason::Closed,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_menu_after_published_summer_break() {
+        let body = format!(
+            r#"<script type="application/ld+json">{{
+                "description": "Our Lunch service is on summer break from Week 28 and will return on Monday of Week 33.",
+                "menu": {MENU_JSON}
+            }}</script>"#
+        );
+        let lunch = parse_lunch(
+            &body,
+            Date {
+                iso_year: 2026,
+                iso_week: 33,
+                weekday: Weekday::Monday,
+            },
+        )
+        .unwrap();
+
+        assert!(matches!(lunch, LunchState::Available { .. }));
     }
 }
