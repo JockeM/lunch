@@ -177,7 +177,11 @@ fn parse_visible_lunch(body: &str, weekday: Weekday) -> Result<LunchState, Sourc
 fn parse_menu_json(body: &str) -> Result<Value, SourceError> {
     parse_json_candidates(body)
         .into_iter()
-        .find_map(|candidate| serde_json::from_str::<Value>(candidate).ok().and_then(find_menu))
+        .find_map(|candidate| {
+            serde_json::from_str::<Value>(candidate)
+                .ok()
+                .and_then(find_menu)
+        })
         .ok_or(SourceError::MissingStructuredData)
 }
 

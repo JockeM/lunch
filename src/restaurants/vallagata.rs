@@ -117,8 +117,7 @@ fn clean_dish_part(part: &str) -> String {
         .replace("‘‘", " ")
         .replace("\"\"", " ")
         .trim_matches(|character: char| {
-            character.is_whitespace()
-                || matches!(character, '\'' | '"' | '’' | '‘')
+            character.is_whitespace() || matches!(character, '\'' | '"' | '’' | '‘')
         })
         .split_whitespace()
         .collect::<Vec<_>>()
