@@ -196,6 +196,10 @@ fn parse_category(line: &str) -> Option<String> {
         "FISK:" => "FISK",
         "VEG:" => "VEG",
         "STREETFOOD:" | "STREETFOOD PÅ BUFFÉ:" => "STREETFOOD",
+        "GÅRDEN:" => "GÅRDEN",
+        "FÅNGST:" => "FÅNGST",
+        "GRÖNA:" => "GRÖNA",
+        "VÄRLDEN:" => "VÄRLDEN",
         _ => return None,
     };
 
@@ -267,6 +271,46 @@ mod tests {
                 ],
                 notes: Vec::new(),
             }
+        );
+    }
+
+    #[test]
+    fn parses_four_dishes_from_current_menu_layout() {
+        let body = r#"
+            <section>
+              <h2>MÅNDAG vecka 34</h2>
+              <p>Gården:</p>
+              <p>Curry-wurst | äpple | picklad silverlök | krämig potatissallad | pankoströssel</p>
+              <p>Fångst:</p>
+              <p>Dillbakad kolja | brynt smör | rödbetor | kapris | pepparrot | kokt potatis</p>
+              <p>Gröna:</p>
+              <p>Bakade betor | getost | granatäpple | valnötssallad | rotsakskräm</p>
+              <p>Världen:</p>
+              <p>Krämig pasta | fläskkött | grönpeppar | riven lagrad ost | persilja | 98 kr MÅNDAGSPRIS!</p>
+            </section>
+        "#;
+        let lunch = parse_lunch(
+            body,
+            Date {
+                iso_year: 2026,
+                iso_week: 34,
+                weekday: Weekday::Monday,
+            },
+        )
+        .unwrap();
+
+        let LunchState::Available { items, .. } = lunch else {
+            panic!("expected an available lunch");
+        };
+
+        assert_eq!(items.len(), 4);
+        assert_eq!(
+            items[0].description,
+            "Curry-wurst | Äpple | Picklad silverlök | Krämig potatissallad | Pankoströssel"
+        );
+        assert_eq!(
+            items[3].description,
+            "Krämig pasta | Fläskkött | Grönpeppar | Riven lagrad ost | Persilja | 98 kr måndagspris!"
         );
     }
 
