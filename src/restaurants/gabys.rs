@@ -5,7 +5,7 @@ use crate::domain::{
 };
 use crate::restaurants::{
     RestaurantSource,
-    utils::{fetch_body, normalize_text, visible_text_lines},
+    utils::{fetch_body, normalize_text, parse_swedish_weekday, visible_text_lines},
 };
 
 pub struct Gabys;
@@ -54,6 +54,13 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
         });
     }
 
+    if day_lines.iter().any(|line| is_closed_notice(line)) {
+        return Ok(LunchState::NoLunchToday {
+            weekday,
+            reason: NoLunchReason::Closed,
+        });
+    }
+
     let items = day_lines
         .into_iter()
         .filter(|line| is_dish_line(line))
@@ -97,16 +104,20 @@ fn is_after_lunch_section(line: &str) -> bool {
 fn find_weekday_lines(lines: &[String], weekday: Weekday) -> Vec<String> {
     let Some(day_start) = lines
         .iter()
-        .position(|line| parse_english_weekday(line) == Some(weekday))
+        .position(|line| parse_weekday(line) == Some(weekday))
     else {
         return Vec::new();
     };
     let day_end = lines[day_start + 1..]
         .iter()
-        .position(|line| parse_english_weekday(line).is_some())
+        .position(|line| parse_weekday(line).is_some())
         .map_or(lines.len(), |position| day_start + 1 + position);
 
     lines[day_start + 1..day_end].to_vec()
+}
+
+fn parse_weekday(value: &str) -> Option<Weekday> {
+    parse_english_weekday(value).or_else(|| parse_swedish_weekday(value))
 }
 
 fn parse_english_weekday(value: &str) -> Option<Weekday> {
@@ -124,8 +135,12 @@ fn is_dish_line(line: &str) -> bool {
     let normalized = line.trim();
 
     !normalized.is_empty()
-        && parse_english_weekday(normalized).is_none()
+        && parse_weekday(normalized).is_none()
         && !normalized.to_ascii_lowercase().contains("sek / pers")
+}
+
+fn is_closed_notice(line: &str) -> bool {
+    matches!(line.trim().to_lowercase().as_str(), "stängt" | "closed")
 }
 
 #[cfg(test)]
@@ -193,6 +208,58 @@ mod tests {
         let lunch = parse_lunch(GABYS_MENU, Weekday::Tuesday).unwrap();
 
         assert!(matches!(lunch, LunchState::Available { items, .. } if items.len() == 3));
+    }
+
+    #[test]
+    fn parses_swedish_weekday_headings_from_current_menu() {
+        let body = r#"
+            <div class="autolunch-title">LUNCHMENY vecka 38</div>
+            <p class="autolunch-heading">Onsdag</p>
+            <p class="autolunch-item">Pasta pesto, mozzarella</p>
+            <p class="autolunch-heading">Torsdag</p>
+            <p class="autolunch-item">Bakad lax, kokt potatis</p>
+            <p class="autolunch-item">Gaby&#039;s raggmunk, stekt fläsk</p>
+            <p class="autolunch-heading">Fredag</p>
+            <p class="autolunch-item">Gaby&#039;s fisktacos</p>
+            <h2>What&#8217;s for lunch, sweetheart?</h2>
+        "#;
+
+        assert_eq!(
+            parse_lunch(body, Weekday::Thursday),
+            Ok(LunchState::Available {
+                weekday: Weekday::Thursday,
+                items: vec![
+                    LunchItem {
+                        description: "Bakad lax, kokt potatis".to_string(),
+                    },
+                    LunchItem {
+                        description: "Gaby's raggmunk, stekt fläsk".to_string(),
+                    },
+                ],
+                notes: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn returns_closed_for_closed_weekday() {
+        let body = r#"
+            <div>LUNCHMENY vecka 38</div>
+            <p>Måndag</p>
+            <p>Bakad kummel</p>
+            <p>Tisdag</p>
+            <p>Stängt</p>
+            <p>Onsdag</p>
+            <p>Bakad rödtunga</p>
+        "#;
+
+        assert_eq!(
+            parse_lunch(body, Weekday::Tuesday),
+            Ok(LunchState::NoLunchToday {
+                weekday: Weekday::Tuesday,
+                reason: NoLunchReason::Closed,
+            })
+        );
     }
 
     #[test]
