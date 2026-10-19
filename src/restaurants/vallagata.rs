@@ -15,7 +15,7 @@ impl RestaurantSource for Vallagata {
         RestaurantMeta {
             id: RestaurantId::Vallagat,
             display_name: "Vällagat",
-            source_url: "https://www.vallagat.se/lunchmeny",
+            source_url: "https://www.vallagat.se/",
             source_kind: SourceKind::HtmlWeekdayText,
         }
     }
@@ -42,6 +42,15 @@ pub fn parse_lunch(body: &str, date: Date) -> Result<LunchState, SourceError> {
         });
     }
 
+    if let Some((_, script)) = body.split_once("id=\"wix-warmup-data\"") {
+        let json = script
+            .split_once('>')
+            .and_then(|(_, content)| content.split_once("</script>"))
+            .map(|(json, _)| json)
+            .ok_or(SourceError::MissingStructuredData)?;
+        return parse_wix_menu(json, date);
+    }
+
     if menu_week(body).is_some_and(|menu_week| menu_week != date.iso_week) {
         return Ok(LunchState::NoLunchToday {
             weekday: date.weekday,
@@ -64,6 +73,77 @@ pub fn parse_lunch(body: &str, date: Date) -> Result<LunchState, SourceError> {
         items,
         notes: Vec::new(),
     })
+}
+
+fn parse_wix_menu(json: &str, date: Date) -> Result<LunchState, SourceError> {
+    let warmup: serde_json::Value =
+        serde_json::from_str(json).map_err(|error| SourceError::InvalidJson(error.to_string()))?;
+    let records = warmup
+        .pointer("/appsWarmupData/dataBinding/dataStore/recordsByCollectionId/Import1")
+        .and_then(serde_json::Value::as_object)
+        .ok_or(SourceError::MissingExpectedElement("menu records"))?;
+    let record = |category: &str| {
+        records
+            .values()
+            .find(|record| record["newField2"].as_str() == Some(category))
+    };
+
+    // The published week is stored in the Monday field, regardless of today's day.
+    let week = record("VECKA")
+        .and_then(|record| record["mandag"].as_str())
+        .and_then(|text| text.trim().strip_prefix("VECKA "))
+        .and_then(|week| week.trim().parse::<u8>().ok())
+        .filter(|week| (1..=53).contains(week))
+        .ok_or(SourceError::MissingExpectedElement("menu week"))?;
+    if week != date.iso_week {
+        return Ok(LunchState::NoLunchToday {
+            weekday: date.weekday,
+            reason: NoLunchReason::Closed,
+        });
+    }
+
+    let day = match date.weekday {
+        Weekday::Monday => "mandag",
+        Weekday::Tuesday => "tisdag",
+        Weekday::Wednesday => "onsdag",
+        Weekday::Thursday => "torsdag",
+        Weekday::Friday => "fredag",
+        Weekday::Saturday | Weekday::Sunday => unreachable!("weekends handled before parsing"),
+    };
+    let mut items = Vec::new();
+    for category in ["GÅRDEN", "FÅNGST", "GRÖNA", "VÄRLDEN"] {
+        let dish = record(category)
+            .and_then(|record| record[day].as_str())
+            .ok_or(SourceError::MissingExpectedElement("weekday dish"))?
+            .trim();
+        if dish.is_empty() {
+            continue;
+        }
+        let sides = record(&format!("{category} TILLBEHÖR"))
+            .and_then(|record| record[day].as_str())
+            .ok_or(SourceError::MissingExpectedElement("dish accompaniments"))?
+            .trim();
+        // Preserve the site's casing, including dietary labels such as G-fri.
+        let description = if sides.is_empty() {
+            dish.to_string()
+        } else {
+            format!("{dish} | {sides}")
+        };
+        items.push(LunchItem { description });
+    }
+
+    if items.is_empty() {
+        Ok(LunchState::NoLunchToday {
+            weekday: date.weekday,
+            reason: NoLunchReason::MissingDay,
+        })
+    } else {
+        Ok(LunchState::Available {
+            weekday: date.weekday,
+            items,
+            notes: Vec::new(),
+        })
+    }
 }
 
 fn menu_week(body: &str) -> Option<u8> {
@@ -208,6 +288,90 @@ fn parse_category(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const CURRENT_MENU: &str = include_str!("fixtures/vallagat.html");
+
+    #[test]
+    fn parses_each_day_from_homepage_menu_records() {
+        for (weekday, dish, sides, count) in [
+            (
+                Weekday::Monday,
+                "Köttfärslimpa",
+                "svampsås, timjansrostade morötter, pressgurka och persiljepotatis - G-fri",
+                4,
+            ),
+            (
+                Weekday::Tuesday,
+                "Fläskschnitzel",
+                "café de Paris-sås, rödvinssås, haricots verts och rostad potatis - L-fri",
+                4,
+            ),
+            (
+                Weekday::Wednesday,
+                "Boeuf bourguignon",
+                "champinjoner, sidfläsk, inlagd lök, morot och potatispuré - G-fri",
+                4,
+            ),
+            (
+                Weekday::Thursday,
+                "Örtstekt secreto",
+                "sås på rotselleri och äpple, hyvlad fänkål och potatispuré - G-fri",
+                4,
+            ),
+            (
+                Weekday::Friday,
+                "Kalv tri tip",
+                "pommes, sauce béarnaise, bordelaisesås och persiljesallad med silverlök - G-fri, L-fri",
+                3,
+            ),
+        ] {
+            let lunch = parse_lunch(
+                CURRENT_MENU,
+                Date {
+                    iso_week: 43,
+                    ..date(weekday)
+                },
+            )
+            .unwrap();
+            let LunchState::Available { items, .. } = lunch else {
+                panic!("expected an available lunch for {weekday}");
+            };
+            assert_eq!(items.len(), count);
+            assert_eq!(items[0].description, format!("{dish} | {sides}"));
+            assert!(items[1].description.starts_with(match weekday {
+                Weekday::Monday => "Pocherad lubb | ",
+                Weekday::Tuesday => "Bakad havsöring | ",
+                Weekday::Wednesday => "Friterad vittling | ",
+                Weekday::Thursday => "Kryddbakad fångst | ",
+                Weekday::Friday => "Havets Wallenbergare | ",
+                _ => unreachable!(),
+            }));
+        }
+    }
+
+    #[test]
+    fn rejects_stale_homepage_menu_and_skips_weekends() {
+        for (weekday, reason) in [
+            (Weekday::Monday, NoLunchReason::Closed),
+            (Weekday::Saturday, NoLunchReason::Weekend),
+        ] {
+            assert_eq!(
+                parse_lunch(CURRENT_MENU, date(weekday)),
+                Ok(LunchState::NoLunchToday { weekday, reason })
+            );
+        }
+    }
+
+    #[test]
+    fn reports_missing_homepage_menu_records() {
+        assert_eq!(
+            parse_lunch(
+                r#"<script id="wix-warmup-data">{}</script>"#,
+                date(Weekday::Monday),
+            ),
+            Err(SourceError::MissingExpectedElement("menu records"))
+        );
+    }
 
     fn date(weekday: Weekday) -> Date {
         Date {
