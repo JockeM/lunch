@@ -1,10 +1,20 @@
 mod slack;
 mod text;
 
-use crate::domain::{FailureStage, SourceError};
+use crate::domain::{FailureStage, LunchState, RestaurantId, RestaurantLunch, SourceError};
 
 pub use slack::render_slack_payload;
 pub use text::render_day;
+
+fn order_link(lunch: &RestaurantLunch) -> Option<(&'static str, &'static str)> {
+    match (lunch.meta.id, &lunch.state) {
+        (RestaurantId::JinxEmpire, LunchState::Available { .. }) => Some((
+            "https://order.openpos.cloud/jinxempire/019a76e1-5979-7d97-b49a-4a9dd57dac33?label=666",
+            "Order online — 10 kr off",
+        )),
+        _ => None,
+    }
+}
 
 fn render_no_lunch_reason(reason: &crate::domain::NoLunchReason) -> &'static str {
     match reason {

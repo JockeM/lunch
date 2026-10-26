@@ -2,7 +2,7 @@ use crate::date::Weekday;
 use crate::domain::{LunchItem, LunchState, RestaurantLunch};
 use serde_json::json;
 
-use super::{render_error, render_no_lunch_reason, render_stage};
+use super::{order_link, render_error, render_no_lunch_reason, render_stage};
 
 pub fn render_slack_payload(weekday: Weekday, lunches: &[RestaurantLunch]) -> String {
     let mut blocks = vec![json!({
@@ -27,6 +27,12 @@ pub fn render_slack_payload(weekday: Weekday, lunches: &[RestaurantLunch]) -> St
 }
 
 fn render_lunch_block(lunch: &RestaurantLunch) -> serde_json::Value {
+    let mut state = render_slack_state(&lunch.state);
+    if let Some((url, label)) = order_link(lunch) {
+        state.push('\n');
+        state.push_str(&slack_link(url, label));
+    }
+
     json!({
         "type": "section",
         "text": {
@@ -34,7 +40,7 @@ fn render_lunch_block(lunch: &RestaurantLunch) -> serde_json::Value {
             "text": format!(
                 "*{}*\n{}",
                 slack_link(lunch.meta.source_url, lunch.meta.display_name),
-                render_slack_state(&lunch.state),
+                state,
             ),
         },
     })
@@ -128,7 +134,7 @@ mod tests {
             },
         };
 
-        let rendered = render_slack_payload(Weekday::Wednesday, &[lunch]);
+        let rendered = render_slack_payload(Weekday::Wednesday, std::slice::from_ref(&lunch));
         let payload: serde_json::Value = serde_json::from_str(&rendered).unwrap();
 
         assert_eq!(payload["text"], "Lunch today (Wednesday): Jinx Empire");
@@ -148,5 +154,31 @@ mod tests {
                 .unwrap()
                 .contains("Bibimbap &amp; greens")
         );
+        let order = "<https://order.openpos.cloud/jinxempire/019a76e1-5979-7d97-b49a-4a9dd57dac33?label=666|Order online — 10 kr off>";
+        assert!(
+            payload["blocks"][2]["text"]["text"]
+                .as_str()
+                .unwrap()
+                .ends_with(&format!("\n{order}"))
+        );
+
+        let mut lunch = lunch;
+        lunch.meta.id = RestaurantId::Gabys;
+        assert!(!render_lunch_block(&lunch).to_string().contains(order));
+
+        lunch.meta.id = RestaurantId::JinxEmpire;
+        for state in [
+            LunchState::NoLunchToday {
+                weekday: Weekday::Wednesday,
+                reason: crate::domain::NoLunchReason::Closed,
+            },
+            LunchState::Unavailable {
+                stage: crate::domain::FailureStage::Fetch,
+                error: crate::domain::SourceError::NotImplemented,
+            },
+        ] {
+            lunch.state = state;
+            assert!(!render_lunch_block(&lunch).to_string().contains(order));
+        }
     }
 }
