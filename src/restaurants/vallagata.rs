@@ -5,8 +5,9 @@ use crate::domain::{
 };
 use crate::restaurants::{
     RestaurantSource,
-    utils::{fetch_body, parse_swedish_weekday, visible_text_lines},
+    utils::{fetch_body, normalize_text, parse_swedish_weekday, visible_text_lines},
 };
+use scraper::{ElementRef, Html, Selector};
 
 pub struct Vallagata;
 
@@ -35,6 +36,40 @@ impl RestaurantSource for Vallagata {
 }
 
 pub fn parse_lunch(body: &str, date: Date) -> Result<LunchState, SourceError> {
+    let mut lunch = parse_daily_lunch(body, date)?;
+    if let LunchState::Available { items, .. } = &mut lunch
+        && let Some(buffet) = parse_buffet(body)
+    {
+        items.push(buffet);
+    }
+    Ok(lunch)
+}
+
+fn parse_buffet(body: &str) -> Option<LunchItem> {
+    let document = Html::parse_document(body);
+    let heading_selector = Selector::parse("h2").expect("valid heading selector");
+    let description_selector = Selector::parse("h3, p").expect("valid description selector");
+    let heading = document.select(&heading_selector).find(|heading| {
+        normalize_text(&heading.text().collect::<Vec<_>>().join(" "))
+            .eq_ignore_ascii_case("Pick & Weigh Buffet")
+    })?;
+    // Wix wraps each text element in its own div within the buffet card.
+    let card = ElementRef::wrap(heading.parent()?.parent()?)?;
+    let description = card
+        .select(&description_selector)
+        .map(|element| element.text().collect::<Vec<_>>().join(" "))
+        .collect::<Vec<_>>()
+        .join(". ");
+    let description = normalize_text(&description);
+    if description.is_empty() {
+        return None;
+    }
+    Some(LunchItem {
+        description: format!("Pick & Weigh: {description}"),
+    })
+}
+
+fn parse_daily_lunch(body: &str, date: Date) -> Result<LunchState, SourceError> {
     if matches!(date.weekday, Weekday::Saturday | Weekday::Sunday) {
         return Ok(LunchState::NoLunchToday {
             weekday: date.weekday,
@@ -290,6 +325,60 @@ mod tests {
     use super::*;
 
     const CURRENT_MENU: &str = include_str!("fixtures/vallagat.html");
+
+    #[test]
+    fn includes_buffet_on_available_weekdays_only() {
+        let body = format!(
+            r#"{CURRENT_MENU}
+            <div>
+                <div><h2>Pick &amp; Weigh Buffet</h2></div>
+                <div><h3>Plocka själv – betala efter vikt</h3></div>
+                <div><p>Salladsbuffé med grönsaker, dressingar och proteiner</p></div>
+            </div>
+            <div><p>Unrelated catering information</p></div>
+            <script>console.log("not a dish");</script>
+        "#
+        );
+
+        for weekday in [
+            Weekday::Monday,
+            Weekday::Tuesday,
+            Weekday::Wednesday,
+            Weekday::Thursday,
+            Weekday::Friday,
+        ] {
+            let LunchState::Available { items, .. } = parse_lunch(
+                &body,
+                Date {
+                    iso_week: 43,
+                    ..date(weekday)
+                },
+            )
+            .unwrap() else {
+                panic!("expected lunch for {weekday}");
+            };
+            assert_eq!(
+                items.last().unwrap().description,
+                "Pick & Weigh: Plocka själv – betala efter vikt. Salladsbuffé med grönsaker, dressingar och proteiner"
+            );
+            assert_eq!(
+                items
+                    .iter()
+                    .filter(|item| item.description.starts_with("Pick & Weigh:"))
+                    .count(),
+                1
+            );
+        }
+        for (weekday, reason) in [
+            (Weekday::Monday, NoLunchReason::Closed),
+            (Weekday::Saturday, NoLunchReason::Weekend),
+        ] {
+            assert_eq!(
+                parse_lunch(&body, date(weekday)),
+                Ok(LunchState::NoLunchToday { weekday, reason })
+            );
+        }
+    }
 
     #[test]
     fn parses_each_day_from_homepage_menu_records() {

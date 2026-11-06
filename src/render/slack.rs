@@ -70,7 +70,10 @@ fn render_slack_state(state: &LunchState, restaurant: RestaurantId) -> String {
                 RestaurantId::Svinn => {
                     render_grouped_available(items, &[("Extra hos Svinn", true)])
                 }
-                _ => render_slack_available(items),
+                RestaurantId::Vallagat => {
+                    render_grouped_available(items, &[("Pick & Weigh", false)])
+                }
+                RestaurantId::JinxEmpire => render_slack_available(items),
             };
 
             lines.extend(notes.iter().map(|note| format!("_{}_", slack_escape(note))));
@@ -157,6 +160,27 @@ fn slack_link(url: &str, label: &str) -> String {
 mod tests {
     use super::*;
     use crate::domain::{RestaurantId, RestaurantMeta, SourceKind};
+
+    #[test]
+    fn renders_vallagat_buffet_as_a_separate_section() {
+        let state = LunchState::Available {
+            weekday: Weekday::Monday,
+            items: [
+                "Kycklingsaltimbocca",
+                "Pick & Weigh: Salladsbuffé – betala efter vikt",
+            ]
+            .into_iter()
+            .map(|description| LunchItem {
+                description: description.to_string(),
+            })
+            .collect(),
+            notes: Vec::new(),
+        };
+        assert_eq!(
+            render_slack_state(&state, RestaurantId::Vallagat),
+            "\n*Today's lunch*\n• Kycklingsaltimbocca\n\n*Pick & Weigh*\nSalladsbuffé – betala efter vikt"
+        );
+    }
 
     #[test]
     fn groups_svinn_extras_under_one_heading() {
