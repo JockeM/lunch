@@ -192,6 +192,7 @@ fn is_non_day_section(line: &str) -> bool {
 
     normalized.starts_with("DAGENS LUNCH")
         || normalized.starts_with("ALLTID HOS SVINN")
+        || normalized.starts_with("EXTRA HOS SVINN")
         || normalized.starts_with("\"FÖRST TILL KVARN\"")
         || normalized.starts_with("PRIS:")
 }
@@ -243,6 +244,27 @@ mod tests {
             <strong>Dagens Lunch<br />Serveras kl. 11. 00–14. 00. Pris: 119 kr</strong>
         </div>
     "#;
+
+    #[test]
+    fn friday_stops_before_extra_hos_svinn() {
+        let body = r#"
+            <h5>Lunchmeny</h5>
+            <div class="meny">
+                <strong>Fredag</strong><br>
+                Boeuf Bourguignon<br>
+                Vegetarisk Bourguignon<br>
+                <strong>Extra hos Svinn</strong><br>
+                Köttbullar, 119 kr<br>
+                Serveras med potatismos och gräddsås.<br>
+                <strong>Dagens Lunch</strong>
+            </div>
+        "#;
+
+        assert_eq!(
+            find_weekday_lines(&menu_lines(body).unwrap(), Weekday::Friday),
+            ["Boeuf Bourguignon", "Vegetarisk Bourguignon"]
+        );
+    }
 
     #[test]
     fn parses_wednesday_lunch_items() {
