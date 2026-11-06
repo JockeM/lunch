@@ -7,6 +7,7 @@ use crate::restaurants::{
     RestaurantSource,
     utils::{fetch_body, normalize_text, parse_swedish_weekday, visible_text_lines},
 };
+use scraper::{Html, Selector};
 
 pub struct Gabys;
 
@@ -44,8 +45,10 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
         });
     }
 
-    let lines = lunch_lines(body)?;
-    let day_lines = find_weekday_lines(&lines, weekday);
+    let day_lines = match autolunch_day_lines(body, weekday) {
+        Some(lines) => lines,
+        None => find_weekday_lines(&lunch_lines(body)?, weekday),
+    };
 
     if day_lines.is_empty() {
         return Ok(LunchState::NoLunchToday {
@@ -81,6 +84,33 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
         items,
         notes: Vec::new(),
     })
+}
+
+fn autolunch_day_lines(body: &str, weekday: Weekday) -> Option<Vec<String>> {
+    let document = Html::parse_document(body);
+    let menu_selector = Selector::parse(".autolunch-menu").expect("valid menu selector");
+    let entry_selector =
+        Selector::parse(".autolunch-heading, .autolunch-item").expect("valid entry selector");
+    let menu = document.select(&menu_selector).next()?;
+    let mut in_day = false;
+    let mut lines = Vec::new();
+
+    for entry in menu.select(&entry_selector) {
+        let text = normalize_text(&entry.text().collect::<Vec<_>>().join(" "));
+        if entry
+            .value()
+            .has_class("autolunch-heading", scraper::CaseSensitivity::CaseSensitive)
+        {
+            if in_day {
+                break;
+            }
+            in_day = parse_weekday(&text) == Some(weekday);
+        } else if in_day {
+            lines.push(text);
+        }
+    }
+
+    Some(lines)
 }
 
 fn lunch_lines(body: &str) -> Result<Vec<String>, SourceError> {
@@ -213,6 +243,7 @@ mod tests {
     #[test]
     fn parses_swedish_weekday_headings_from_current_menu() {
         let body = r#"
+            <div class="autolunch-menu">
             <div class="autolunch-title">LUNCHMENY vecka 38</div>
             <p class="autolunch-heading">Onsdag</p>
             <p class="autolunch-item">Pasta pesto, mozzarella</p>
@@ -221,6 +252,7 @@ mod tests {
             <p class="autolunch-item">Gaby&#039;s raggmunk, stekt fläsk</p>
             <p class="autolunch-heading">Fredag</p>
             <p class="autolunch-item">Gaby&#039;s fisktacos</p>
+            </div>
             <h2>What&#8217;s for lunch, sweetheart?</h2>
         "#;
 
@@ -236,6 +268,42 @@ mod tests {
                         description: "Gaby's raggmunk, stekt fläsk".to_string(),
                     },
                 ],
+                notes: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn friday_excludes_standing_menu_items_and_scripts() {
+        let body = r#"
+            <div class="autolunch-menu">
+                <div class="autolunch-title">LUNCHMENY vecka 45</div>
+                <p class="autolunch-heading">Torsdag</p>
+                <p class="autolunch-item">Boeuf Bourguignon</p>
+                <p class="autolunch-heading">Fredag</p>
+                <p class="autolunch-item">Halstrad lax</p>
+                <p class="autolunch-item">Pulled pork burgare</p>
+                <p class="autolunch-item">Gnocchi, tryffelsås</p>
+                <script>console.log("not a dish");</script>
+                <p class="autolunch-heading">Green Kitchen</p>
+                <p class="autolunch-item">Caesarsallad</p>
+                <p class="autolunch-heading">Poke Bowl – 165 SEK / pers.</p>
+                <p class="autolunch-item">Glasnudlar, lax</p>
+            </div>
+            <script>fetch("/menu");</script>
+            <p class="autolunch-item">Outside the menu</p>
+        "#;
+
+        assert_eq!(
+            parse_lunch(body, Weekday::Friday),
+            Ok(LunchState::Available {
+                weekday: Weekday::Friday,
+                items: ["Halstrad lax", "Pulled pork burgare", "Gnocchi, tryffelsås"]
+                    .into_iter()
+                    .map(|description| LunchItem {
+                        description: description.to_string(),
+                    })
+                    .collect(),
                 notes: Vec::new(),
             })
         );
