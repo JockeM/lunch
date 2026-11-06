@@ -61,7 +61,7 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
         });
     }
 
-    let items = parse_items(day_lines);
+    let mut items = parse_items(day_lines);
 
     if items.is_empty() {
         return Ok(LunchState::NoLunchToday {
@@ -69,6 +69,8 @@ pub fn parse_lunch(body: &str, weekday: Weekday) -> Result<LunchState, SourceErr
             reason: NoLunchReason::EmptyMenu,
         });
     }
+
+    items.extend(parse_extra_items(&menu_lines));
 
     Ok(LunchState::Available {
         weekday,
@@ -88,6 +90,37 @@ fn menu_lines(body: &str) -> Result<Vec<String>, SourceError> {
     let menu_body = &body[menu_start..];
 
     Ok(visible_text_lines(&strip_hidden_garbage(menu_body)))
+}
+
+fn parse_extra_items(lines: &[String]) -> Vec<LunchItem> {
+    let mut items = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let heading = line.to_uppercase();
+        let is_standing =
+            heading.starts_with("EXTRA HOS SVINN") || heading.starts_with("ALLTID HOS SVINN");
+        let is_limited = is_limited_extra_heading(line);
+        if !is_standing && !is_limited {
+            continue;
+        }
+
+        let description = lines[index + 1..]
+            .iter()
+            .take_while(|line| !is_non_day_section(line) && parse_swedish_weekday(line).is_none())
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(" ");
+        if !description.is_empty() {
+            let qualifier = if is_limited {
+                " (Först till kvarn)"
+            } else {
+                ""
+            };
+            items.push(lunch_item(&format!(
+                "Extra hos Svinn: {description}{qualifier}"
+            )));
+        }
+    }
+    items
 }
 
 fn find_weekday_lines(lines: &[String], weekday: Weekday) -> Vec<String> {
@@ -193,8 +226,15 @@ fn is_non_day_section(line: &str) -> bool {
     normalized.starts_with("DAGENS LUNCH")
         || normalized.starts_with("ALLTID HOS SVINN")
         || normalized.starts_with("EXTRA HOS SVINN")
-        || normalized.starts_with("\"FÖRST TILL KVARN\"")
+        || is_limited_extra_heading(line)
         || normalized.starts_with("PRIS:")
+}
+
+fn is_limited_extra_heading(line: &str) -> bool {
+    line.trim()
+        .trim_start_matches(['"', '“', '”'])
+        .to_uppercase()
+        .starts_with("FÖRST TILL KVARN")
 }
 
 fn is_dish_line(line: &str) -> bool {
@@ -264,6 +304,47 @@ mod tests {
             find_weekday_lines(&menu_lines(body).unwrap(), Weekday::Friday),
             ["Boeuf Bourguignon", "Vegetarisk Bourguignon"]
         );
+    }
+
+    #[test]
+    fn adds_extras_to_each_available_day_without_duplicating_friday() {
+        let body = r#"
+            <h5>Lunchmeny</h5>
+            <div class="meny">
+                <strong>Måndag</strong><br>Pannbiff<br>Vegetarisk biff<br>
+                <strong>Fredag</strong><br>Boeuf Bourguignon<br>Vegetarisk Bourguignon<br>
+                <strong>Extra hos Svinn</strong><br>
+                Köttbullar, 119 kr<br>Serveras med potatismos.<br>
+                <strong>”Först till kvarn” (Dagspris)</strong><br>
+                Quinoasallad 129 kr<br>Med kyckling, tofu eller halloumi.<br>
+                <strong>Dagens Lunch</strong><br>Inklusive kaffe.<br>
+                <strong>PRIS: 125:-</strong>
+            </div>
+        "#;
+
+        for weekday in [Weekday::Monday, Weekday::Friday] {
+            let LunchState::Available { items, .. } = parse_lunch(body, weekday).unwrap() else {
+                panic!("expected lunch for {weekday}");
+            };
+            assert_eq!(items.len(), 4);
+            assert_eq!(
+                items[2].description,
+                "Extra hos Svinn: Köttbullar, 119 kr Serveras med potatismos."
+            );
+            assert_eq!(
+                items[3].description,
+                "Extra hos Svinn: Quinoasallad 129 kr Med kyckling, tofu eller halloumi. (Först till kvarn)"
+            );
+        }
+        for (weekday, reason) in [
+            (Weekday::Tuesday, NoLunchReason::MissingDay),
+            (Weekday::Saturday, NoLunchReason::Weekend),
+        ] {
+            assert_eq!(
+                parse_lunch(body, weekday),
+                Ok(LunchState::NoLunchToday { weekday, reason })
+            );
+        }
     }
 
     #[test]

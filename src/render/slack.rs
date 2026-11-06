@@ -62,10 +62,15 @@ fn render_slack_fallback(weekday: Weekday, lunches: &[RestaurantLunch]) -> Strin
 fn render_slack_state(state: &LunchState, restaurant: RestaurantId) -> String {
     match state {
         LunchState::Available { items, notes, .. } => {
-            let mut lines = if restaurant == RestaurantId::Gabys {
-                render_gabys_available(items)
-            } else {
-                render_slack_available(items)
+            let mut lines = match restaurant {
+                RestaurantId::Gabys => render_grouped_available(
+                    items,
+                    &[("Green Kitchen", true), ("Poke Bowl", false)],
+                ),
+                RestaurantId::Svinn => {
+                    render_grouped_available(items, &[("Extra hos Svinn", true)])
+                }
+                _ => render_slack_available(items),
             };
 
             lines.extend(notes.iter().map(|note| format!("_{}_", slack_escape(note))));
@@ -89,30 +94,31 @@ fn render_slack_state(state: &LunchState, restaurant: RestaurantId) -> String {
     }
 }
 
-fn render_gabys_available(items: &[LunchItem]) -> Vec<String> {
+fn render_grouped_available(items: &[LunchItem], groups: &[(&str, bool)]) -> Vec<String> {
     if items.is_empty() {
         return render_slack_available(items);
     }
 
-    let mut daily = Vec::new();
-    let mut green_kitchen = Vec::new();
-    let mut poke_bowl = Vec::new();
+    let mut dishes = vec![Vec::new(); groups.len() + 1];
     for item in items {
-        if let Some(description) = item.description.strip_prefix("Green Kitchen: ") {
-            green_kitchen.push(format!("• {}", slack_escape(description)));
-        } else if let Some(description) = item.description.strip_prefix("Poke Bowl: ") {
-            poke_bowl.push(slack_escape(description));
-        } else {
-            daily.push(format!("• {}", render_slack_item(item)));
-        }
+        let group = groups
+            .iter()
+            .enumerate()
+            .find_map(|(index, (heading, bullets))| {
+                item.description
+                    .strip_prefix(heading)
+                    .and_then(|text| text.strip_prefix(": "))
+                    .map(|text| (index + 1, *bullets, text))
+            });
+        let (index, bullets, text) = group.unwrap_or((0, true, &item.description));
+        let text = slack_escape(text);
+        dishes[index].push(if bullets { format!("• {text}") } else { text });
     }
 
     let mut sections = Vec::new();
-    for (heading, dishes) in [
-        ("Today's lunch", daily),
-        ("Green Kitchen", green_kitchen),
-        ("Poke Bowl", poke_bowl),
-    ] {
+    let headings =
+        std::iter::once("Today's lunch").chain(groups.iter().map(|(heading, _)| *heading));
+    for (heading, dishes) in headings.zip(dishes) {
         if !dishes.is_empty() {
             sections.push(format!("*{heading}*\n{}", dishes.join("\n")));
         }
@@ -151,6 +157,29 @@ fn slack_link(url: &str, label: &str) -> String {
 mod tests {
     use super::*;
     use crate::domain::{RestaurantId, RestaurantMeta, SourceKind};
+
+    #[test]
+    fn groups_svinn_extras_under_one_heading() {
+        let state = LunchState::Available {
+            weekday: Weekday::Monday,
+            items: [
+                "Pannbiff",
+                "Extra hos Svinn: Köttbullar, 119 kr",
+                "Extra hos Svinn: Quinoasallad (Först till kvarn)",
+            ]
+            .into_iter()
+            .map(|description| LunchItem {
+                description: description.to_string(),
+            })
+            .collect(),
+            notes: Vec::new(),
+        };
+
+        assert_eq!(
+            render_slack_state(&state, RestaurantId::Svinn),
+            "\n*Today's lunch*\n• Pannbiff\n\n*Extra hos Svinn*\n• Köttbullar, 119 kr\n• Quinoasallad (Först till kvarn)"
+        );
+    }
 
     #[test]
     fn groups_gabys_dishes_under_slack_headings() {
