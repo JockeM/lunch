@@ -93,7 +93,9 @@ fn autolunch_day_lines(body: &str, weekday: Weekday) -> Option<Vec<String>> {
         Selector::parse(".autolunch-heading, .autolunch-item").expect("valid entry selector");
     let menu = document.select(&menu_selector).next()?;
     let mut in_day = false;
+    let mut shared_heading = None;
     let mut lines = Vec::new();
+    let mut shared_lines = Vec::new();
 
     for entry in menu.select(&entry_selector) {
         let text = normalize_text(&entry.text().collect::<Vec<_>>().join(" "));
@@ -101,13 +103,24 @@ fn autolunch_day_lines(body: &str, weekday: Weekday) -> Option<Vec<String>> {
             .value()
             .has_class("autolunch-heading", scraper::CaseSensitivity::CaseSensitive)
         {
-            if in_day {
-                break;
-            }
             in_day = parse_weekday(&text) == Some(weekday);
+            let heading = text.to_ascii_lowercase();
+            shared_heading = if heading == "green kitchen" {
+                Some("Green Kitchen")
+            } else if heading.starts_with("poke bowl") {
+                Some("Poke Bowl")
+            } else {
+                None
+            };
         } else if in_day {
             lines.push(text);
+        } else if let Some(heading) = &shared_heading {
+            shared_lines.push(format!("{heading}: {text}"));
         }
+    }
+
+    if !lines.is_empty() && !lines.iter().any(|line| is_closed_notice(line)) {
+        lines.extend(shared_lines);
     }
 
     Some(lines)
@@ -274,10 +287,16 @@ mod tests {
     }
 
     #[test]
-    fn friday_excludes_standing_menu_items_and_scripts() {
+    fn includes_green_kitchen_and_poke_bowl_every_weekday_without_scripts() {
         let body = r#"
             <div class="autolunch-menu">
                 <div class="autolunch-title">LUNCHMENY vecka 45</div>
+                <p class="autolunch-heading">Måndag</p>
+                <p class="autolunch-item">Bakad fisk</p>
+                <p class="autolunch-heading">Tisdag</p>
+                <p class="autolunch-item">Pannbiff</p>
+                <p class="autolunch-heading">Onsdag</p>
+                <p class="autolunch-item">Skaldjurspasta</p>
                 <p class="autolunch-heading">Torsdag</p>
                 <p class="autolunch-item">Boeuf Bourguignon</p>
                 <p class="autolunch-heading">Fredag</p>
@@ -289,24 +308,65 @@ mod tests {
                 <p class="autolunch-item">Caesarsallad</p>
                 <p class="autolunch-heading">Poke Bowl – 165 SEK / pers.</p>
                 <p class="autolunch-item">Glasnudlar, lax</p>
+                <p class="autolunch-heading">Other offers</p>
+                <p class="autolunch-item">Not lunch</p>
             </div>
             <script>fetch("/menu");</script>
             <p class="autolunch-item">Outside the menu</p>
         "#;
 
-        assert_eq!(
-            parse_lunch(body, Weekday::Friday),
-            Ok(LunchState::Available {
-                weekday: Weekday::Friday,
-                items: ["Halstrad lax", "Pulled pork burgare", "Gnocchi, tryffelsås"]
-                    .into_iter()
-                    .map(|description| LunchItem {
-                        description: description.to_string(),
-                    })
-                    .collect(),
-                notes: Vec::new(),
-            })
-        );
+        for (weekday, dishes) in [
+            (Weekday::Monday, vec!["Bakad fisk"]),
+            (Weekday::Tuesday, vec!["Pannbiff"]),
+            (Weekday::Wednesday, vec!["Skaldjurspasta"]),
+            (Weekday::Thursday, vec!["Boeuf Bourguignon"]),
+            (
+                Weekday::Friday,
+                vec!["Halstrad lax", "Pulled pork burgare", "Gnocchi, tryffelsås"],
+            ),
+        ] {
+            let items = dishes
+                .into_iter()
+                .chain(["Green Kitchen: Caesarsallad", "Poke Bowl: Glasnudlar, lax"])
+                .map(|description| LunchItem {
+                    description: description.to_string(),
+                })
+                .collect();
+            assert_eq!(
+                parse_lunch(body, weekday),
+                Ok(LunchState::Available {
+                    weekday,
+                    items,
+                    notes: Vec::new(),
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn shared_items_do_not_override_closed_missing_or_weekend_days() {
+        let body = r#"
+            <div class="autolunch-menu">
+                <p class="autolunch-heading">Green Kitchen</p>
+                <p class="autolunch-item">Caesarsallad</p>
+                <p class="autolunch-heading">Måndag</p>
+                <p class="autolunch-item">Stängt</p>
+                <p class="autolunch-heading">Poke Bowl</p>
+                <p class="autolunch-item">Glasnudlar, lax</p>
+            </div>
+        "#;
+
+        for (weekday, reason) in [
+            (Weekday::Monday, NoLunchReason::Closed),
+            (Weekday::Tuesday, NoLunchReason::MissingDay),
+            (Weekday::Saturday, NoLunchReason::Weekend),
+            (Weekday::Sunday, NoLunchReason::Weekend),
+        ] {
+            assert_eq!(
+                parse_lunch(body, weekday),
+                Ok(LunchState::NoLunchToday { weekday, reason })
+            );
+        }
     }
 
     #[test]

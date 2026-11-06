@@ -1,5 +1,5 @@
 use crate::date::Weekday;
-use crate::domain::{LunchItem, LunchState, RestaurantLunch};
+use crate::domain::{LunchItem, LunchState, RestaurantId, RestaurantLunch};
 use serde_json::json;
 
 use super::{order_link, render_error, render_no_lunch_reason, render_stage};
@@ -27,7 +27,7 @@ pub fn render_slack_payload(weekday: Weekday, lunches: &[RestaurantLunch]) -> St
 }
 
 fn render_lunch_block(lunch: &RestaurantLunch) -> serde_json::Value {
-    let mut state = render_slack_state(&lunch.state);
+    let mut state = render_slack_state(&lunch.state, lunch.meta.id);
     if let Some((url, label)) = order_link(lunch) {
         state.push('\n');
         state.push_str(&slack_link(url, label));
@@ -59,10 +59,14 @@ fn render_slack_fallback(weekday: Weekday, lunches: &[RestaurantLunch]) -> Strin
     }
 }
 
-fn render_slack_state(state: &LunchState) -> String {
+fn render_slack_state(state: &LunchState, restaurant: RestaurantId) -> String {
     match state {
         LunchState::Available { items, notes, .. } => {
-            let mut lines = render_slack_available(items);
+            let mut lines = if restaurant == RestaurantId::Gabys {
+                render_gabys_available(items)
+            } else {
+                render_slack_available(items)
+            };
 
             lines.extend(notes.iter().map(|note| format!("_{}_", slack_escape(note))));
             lines.join("\n")
@@ -83,6 +87,38 @@ fn render_slack_state(state: &LunchState) -> String {
             )
         }
     }
+}
+
+fn render_gabys_available(items: &[LunchItem]) -> Vec<String> {
+    if items.is_empty() {
+        return render_slack_available(items);
+    }
+
+    let mut daily = Vec::new();
+    let mut green_kitchen = Vec::new();
+    let mut poke_bowl = Vec::new();
+    for item in items {
+        if let Some(description) = item.description.strip_prefix("Green Kitchen: ") {
+            green_kitchen.push(format!("• {}", slack_escape(description)));
+        } else if let Some(description) = item.description.strip_prefix("Poke Bowl: ") {
+            poke_bowl.push(slack_escape(description));
+        } else {
+            daily.push(format!("• {}", render_slack_item(item)));
+        }
+    }
+
+    let mut sections = Vec::new();
+    for (heading, dishes) in [
+        ("Today's lunch", daily),
+        ("Green Kitchen", green_kitchen),
+        ("Poke Bowl", poke_bowl),
+    ] {
+        if !dishes.is_empty() {
+            sections.push(format!("*{heading}*\n{}", dishes.join("\n")));
+        }
+    }
+
+    vec![format!("\n{}", sections.join("\n\n"))]
 }
 
 fn render_slack_available(items: &[LunchItem]) -> Vec<String> {
@@ -115,6 +151,45 @@ fn slack_link(url: &str, label: &str) -> String {
 mod tests {
     use super::*;
     use crate::domain::{RestaurantId, RestaurantMeta, SourceKind};
+
+    #[test]
+    fn groups_gabys_dishes_under_slack_headings() {
+        let lunch = RestaurantLunch {
+            meta: RestaurantMeta {
+                id: RestaurantId::Gabys,
+                display_name: "Gaby's",
+                source_url: "https://jacyzhotel.com/restauranger-goteborg/gabys/#lunch",
+                source_kind: SourceKind::HtmlWeekdayText,
+            },
+            state: LunchState::Available {
+                weekday: Weekday::Friday,
+                items: [
+                    "Halstrad lax & potatis",
+                    "Gnocchi, tryffelsås",
+                    "Green Kitchen: Caesarsallad",
+                    "Green Kitchen: Caesar West Coast",
+                    "Poke Bowl: Glasnudlar, lax",
+                ]
+                .into_iter()
+                .map(|description| LunchItem {
+                    description: description.to_string(),
+                })
+                .collect(),
+                notes: Vec::new(),
+            },
+        };
+
+        let payload: serde_json::Value =
+            serde_json::from_str(&render_slack_payload(Weekday::Friday, &[lunch])).unwrap();
+
+        assert_eq!(
+            payload["blocks"][2]["text"]["text"],
+            "*<https://jacyzhotel.com/restauranger-goteborg/gabys/#lunch|Gaby's>*\n\n\
+             *Today's lunch*\n• Halstrad lax &amp; potatis\n• Gnocchi, tryffelsås\n\n\
+             *Green Kitchen*\n• Caesarsallad\n• Caesar West Coast\n\n\
+             *Poke Bowl*\nGlasnudlar, lax"
+        );
+    }
 
     #[test]
     fn renders_slack_payload() {
