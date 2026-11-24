@@ -24,6 +24,11 @@ pub fn all_sources() -> Vec<Box<dyn RestaurantSource>> {
             "Evolushi Stampgatan",
             "https://thatsup.se/goteborg/restaurang/evolushi-stampgatan/",
         ),
+        website_only(
+            RestaurantId::BirriaSeoul,
+            "Birria Seoul",
+            "https://thatsup.se/goteborg/restaurang/birria-seoul/",
+        ),
     ]
 }
 
@@ -70,11 +75,18 @@ mod tests {
             iso_week: 21,
             weekday: Weekday::Wednesday,
         };
-        for (id, name, url) in [(
-            RestaurantId::Evolushi,
-            "Evolushi Stampgatan",
-            "https://thatsup.se/goteborg/restaurang/evolushi-stampgatan/",
-        )] {
+        for (id, name, url) in [
+            (
+                RestaurantId::Evolushi,
+                "Evolushi Stampgatan",
+                "https://thatsup.se/goteborg/restaurang/evolushi-stampgatan/",
+            ),
+            (
+                RestaurantId::BirriaSeoul,
+                "Birria Seoul",
+                "https://thatsup.se/goteborg/restaurang/birria-seoul/",
+            ),
+        ] {
             let source = sources
                 .iter()
                 .find(|source| source.meta().id == id)

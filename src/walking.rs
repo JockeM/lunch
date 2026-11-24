@@ -28,7 +28,7 @@ impl OfficeWalk {
 
 pub fn walk_from_office(restaurant: RestaurantId) -> Option<OfficeWalk> {
     let (destination, distance_meters, minutes) = match restaurant {
-        RestaurantId::Evolushi => return None,
+        RestaurantId::Evolushi | RestaurantId::BirriaSeoul => return None,
         RestaurantId::Vallagat => ("Johan Willins gata 6, Göteborg", 250, 4),
         RestaurantId::JinxEmpire => ("Folkungagatan 20, Göteborg", 450, 6),
         RestaurantId::Svinn => ("Norra Ågatan 6, Göteborg", 400, 5),
