@@ -26,18 +26,19 @@ impl OfficeWalk {
     }
 }
 
-pub fn walk_from_office(restaurant: RestaurantId) -> OfficeWalk {
+pub fn walk_from_office(restaurant: RestaurantId) -> Option<OfficeWalk> {
     let (destination, distance_meters, minutes) = match restaurant {
+        RestaurantId::Evolushi => return None,
         RestaurantId::Vallagat => ("Johan Willins gata 6, Göteborg", 250, 4),
         RestaurantId::JinxEmpire => ("Folkungagatan 20, Göteborg", 450, 6),
         RestaurantId::Svinn => ("Norra Ågatan 6, Göteborg", 400, 5),
         RestaurantId::Gabys => ("Drakegatan 10, Göteborg", 650, 9),
     };
-    OfficeWalk {
+    Some(OfficeWalk {
         destination,
         distance_meters,
         minutes,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -62,7 +63,8 @@ mod tests {
             (RestaurantId::Svinn, "Norra Ågatan 6, Göteborg"),
             (RestaurantId::Gabys, "Drakegatan 10, Göteborg"),
         ] {
-            let url = reqwest::Url::parse(&walk_from_office(restaurant).directions_url()).unwrap();
+            let walk = walk_from_office(restaurant).unwrap();
+            let url = reqwest::Url::parse(&walk.directions_url()).unwrap();
             let params = url
                 .query_pairs()
                 .collect::<std::collections::HashMap<_, _>>();

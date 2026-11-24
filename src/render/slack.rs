@@ -28,23 +28,28 @@ pub fn render_slack_payload(weekday: Weekday, lunches: &[RestaurantLunch]) -> St
 }
 
 fn render_lunch_block(lunch: &RestaurantLunch) -> serde_json::Value {
-    let walk = walk_from_office(lunch.meta.id);
-    let mut state = render_slack_state(&lunch.state, lunch.meta.id);
+    let mut text = format!(
+        "*{}*",
+        slack_link(lunch.meta.source_url, lunch.meta.display_name)
+    );
+    if let Some(walk) = walk_from_office(lunch.meta.id) {
+        text.push(' ');
+        text.push_str(&slack_link(&walk.directions_url(), &walk.label()));
+    }
+    if !matches!(lunch.state, LunchState::ListedOnly) {
+        text.push('\n');
+        text.push_str(&render_slack_state(&lunch.state, lunch.meta.id));
+    }
     if let Some((url, label)) = order_link(lunch) {
-        state.push('\n');
-        state.push_str(&slack_link(url, label));
+        text.push('\n');
+        text.push_str(&slack_link(url, label));
     }
 
     json!({
         "type": "section",
         "text": {
             "type": "mrkdwn",
-            "text": format!(
-                "*{}* {}\n{}",
-                slack_link(lunch.meta.source_url, lunch.meta.display_name),
-                slack_link(&walk.directions_url(), &walk.label()),
-                state,
-            ),
+            "text": text,
         },
     })
 }
@@ -64,6 +69,7 @@ fn render_slack_fallback(weekday: Weekday, lunches: &[RestaurantLunch]) -> Strin
 
 fn render_slack_state(state: &LunchState, restaurant: RestaurantId) -> String {
     match state {
+        LunchState::ListedOnly => String::new(),
         LunchState::Available { items, notes, .. } => {
             let mut lines = match restaurant {
                 RestaurantId::Gabys => render_grouped_available(
@@ -76,7 +82,7 @@ fn render_slack_state(state: &LunchState, restaurant: RestaurantId) -> String {
                 RestaurantId::Vallagat => {
                     render_grouped_available(items, &[("Pick & Weigh", false)])
                 }
-                RestaurantId::JinxEmpire => render_slack_available(items),
+                _ => render_slack_available(items),
             };
 
             lines.extend(notes.iter().map(|note| format!("_{}_", slack_escape(note))));
@@ -246,7 +252,9 @@ mod tests {
              *Green Kitchen*\n• Caesarsallad\n• Caesar West Coast\n\n\
              *Poke Bowl*\nGlasnudlar, lax",
                 slack_link(
-                    &walk_from_office(RestaurantId::Gabys).directions_url(),
+                    &walk_from_office(RestaurantId::Gabys)
+                        .unwrap()
+                        .directions_url(),
                     "🚶 650 m · ~9 min",
                 )
             )

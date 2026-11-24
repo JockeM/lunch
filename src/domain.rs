@@ -4,6 +4,7 @@ use crate::date::Weekday;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RestaurantId {
+    Evolushi,
     Gabys,
     JinxEmpire,
     Svinn,
@@ -20,6 +21,7 @@ pub struct RestaurantMeta {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceKind {
+    WebsiteOnly,
     JsonLdMenu,
     HtmlWeekdayText,
 }
@@ -32,6 +34,7 @@ pub struct RestaurantLunch {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LunchState {
+    ListedOnly,
     Available {
         weekday: Weekday,
         items: Vec<LunchItem>,

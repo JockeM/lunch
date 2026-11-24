@@ -10,10 +10,12 @@ pub fn render_day(weekday: Weekday, lunches: &[RestaurantLunch]) -> String {
     for lunch in lunches {
         output.push_str("\n\n");
         output.push_str(lunch.meta.display_name);
+        if let Some(walk) = walk_from_office(lunch.meta.id) {
+            output.push('\n');
+            output.push_str(&walk.label());
+        }
         output.push('\n');
-        output.push_str(&walk_from_office(lunch.meta.id).label());
-        output.push('\n');
-        output.push_str(&render_state(&lunch.state));
+        output.push_str(&render_state(lunch));
         if let Some((url, label)) = order_link(lunch) {
             output.push_str(&format!("\n{label}: {url}"));
         }
@@ -22,8 +24,9 @@ pub fn render_day(weekday: Weekday, lunches: &[RestaurantLunch]) -> String {
     output
 }
 
-fn render_state(state: &LunchState) -> String {
-    match state {
+fn render_state(lunch: &RestaurantLunch) -> String {
+    match &lunch.state {
+        LunchState::ListedOnly => format!("Website: {}", lunch.meta.source_url),
         LunchState::Available { items, .. } => render_available(items),
         LunchState::NoLunchToday {
             weekday, reason, ..
