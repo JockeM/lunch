@@ -29,6 +29,11 @@ pub fn all_sources() -> Vec<Box<dyn RestaurantSource>> {
             "Birria Seoul",
             "https://thatsup.se/goteborg/restaurang/birria-seoul/",
         ),
+        website_only(
+            RestaurantId::UlleviThaikok,
+            "Ullevi Thaikök",
+            "https://thatsup.se/goteborg/restaurang/ullevi-thaikok/",
+        ),
     ]
 }
 
@@ -85,6 +90,11 @@ mod tests {
                 RestaurantId::BirriaSeoul,
                 "Birria Seoul",
                 "https://thatsup.se/goteborg/restaurang/birria-seoul/",
+            ),
+            (
+                RestaurantId::UlleviThaikok,
+                "Ullevi Thaikök",
+                "https://thatsup.se/goteborg/restaurang/ullevi-thaikok/",
             ),
         ] {
             let source = sources

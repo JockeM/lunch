@@ -5,6 +5,7 @@ use crate::date::Weekday;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RestaurantId {
     Evolushi,
+    UlleviThaikok,
     BirriaSeoul,
     Gabys,
     JinxEmpire,
