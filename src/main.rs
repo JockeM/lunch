@@ -3,6 +3,7 @@ mod date;
 mod domain;
 mod render;
 mod restaurants;
+mod walking;
 
 use std::env;
 use std::process::ExitCode;

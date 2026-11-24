@@ -1,5 +1,6 @@
 use crate::date::Weekday;
 use crate::domain::{LunchItem, LunchState, RestaurantId, RestaurantLunch};
+use crate::walking::walk_from_office;
 use serde_json::json;
 
 use super::{order_link, render_error, render_no_lunch_reason, render_stage};
@@ -27,6 +28,7 @@ pub fn render_slack_payload(weekday: Weekday, lunches: &[RestaurantLunch]) -> St
 }
 
 fn render_lunch_block(lunch: &RestaurantLunch) -> serde_json::Value {
+    let walk = walk_from_office(lunch.meta.id);
     let mut state = render_slack_state(&lunch.state, lunch.meta.id);
     if let Some((url, label)) = order_link(lunch) {
         state.push('\n');
@@ -38,8 +40,9 @@ fn render_lunch_block(lunch: &RestaurantLunch) -> serde_json::Value {
         "text": {
             "type": "mrkdwn",
             "text": format!(
-                "*{}*\n{}",
+                "*{}* {}\n{}",
                 slack_link(lunch.meta.source_url, lunch.meta.display_name),
+                slack_link(&walk.directions_url(), &walk.label()),
                 state,
             ),
         },
@@ -237,10 +240,16 @@ mod tests {
 
         assert_eq!(
             payload["blocks"][2]["text"]["text"],
-            "*<https://jacyzhotel.com/restauranger-goteborg/gabys/#lunch|Gaby's>*\n\n\
+            format!(
+                "*<https://jacyzhotel.com/restauranger-goteborg/gabys/#lunch|Gaby's>* {}\n\n\
              *Today's lunch*\n• Halstrad lax &amp; potatis\n• Gnocchi, tryffelsås\n\n\
              *Green Kitchen*\n• Caesarsallad\n• Caesar West Coast\n\n\
-             *Poke Bowl*\nGlasnudlar, lax"
+             *Poke Bowl*\nGlasnudlar, lax",
+                slack_link(
+                    &walk_from_office(RestaurantId::Gabys).directions_url(),
+                    "🚶 650 m · ~9 min",
+                )
+            )
         );
     }
 

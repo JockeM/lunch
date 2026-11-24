@@ -1,5 +1,6 @@
 use crate::date::Weekday;
 use crate::domain::{LunchItem, LunchState, RestaurantLunch};
+use crate::walking::walk_from_office;
 
 use super::{order_link, render_error, render_no_lunch_reason, render_stage};
 
@@ -9,6 +10,8 @@ pub fn render_day(weekday: Weekday, lunches: &[RestaurantLunch]) -> String {
     for lunch in lunches {
         output.push_str("\n\n");
         output.push_str(lunch.meta.display_name);
+        output.push('\n');
+        output.push_str(&walk_from_office(lunch.meta.id).label());
         output.push('\n');
         output.push_str(&render_state(&lunch.state));
         if let Some((url, label)) = order_link(lunch) {
@@ -76,7 +79,7 @@ mod tests {
 
         assert_eq!(
             render_day(Weekday::Wednesday, &[lunch]),
-            "Today (Wednesday)\n\nJinx Empire\nPork or tofu\nOrder online — 10 kr off: https://order.openpos.cloud/jinxempire/019a76e1-5979-7d97-b49a-4a9dd57dac33?label=666"
+            "Today (Wednesday)\n\nJinx Empire\n🚶 450 m · ~6 min\nPork or tofu\nOrder online — 10 kr off: https://order.openpos.cloud/jinxempire/019a76e1-5979-7d97-b49a-4a9dd57dac33?label=666"
         );
     }
 
